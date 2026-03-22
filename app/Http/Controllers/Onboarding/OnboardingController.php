@@ -25,6 +25,11 @@ class OnboardingController extends Controller
         ApiTokenService $tokenService,
         IntegrationConnectionService $integrationConnectionService,
     ): JsonResponse {
+        $actor = $request->user();
+        $actorSystemAdminUserId = $actor instanceof User && (bool) $actor->is_system_admin
+            ? (int) $actor->id
+            : null;
+
         $payload = $request->validate([
             'tenant_name' => ['required', 'string', 'max:255'],
             'tenant_slug' => ['nullable', 'string', 'max:255', 'regex:/^[a-z0-9\-]+$/'],
@@ -87,7 +92,7 @@ class OnboardingController extends Controller
             ]);
         }
 
-        $issued = DB::transaction(function () use ($payload, $tenantSlug, $tokenService, $integrationConnectionService): array {
+        $issued = DB::transaction(function () use ($payload, $tenantSlug, $tokenService, $integrationConnectionService, $actorSystemAdminUserId): array {
             $planCode = (string) ($payload['plan_code'] ?? 'starter');
             $plan = Plan::query()->firstOrCreate(
                 ['code' => $planCode],
@@ -124,6 +129,11 @@ class OnboardingController extends Controller
             ]);
 
             $tenant->users()->attach($owner->id, ['role' => 'owner']);
+            if ($actorSystemAdminUserId !== null && $actorSystemAdminUserId !== (int) $owner->id) {
+                $tenant->users()->syncWithoutDetaching([
+                    $actorSystemAdminUserId => ['role' => 'admin'],
+                ]);
+            }
 
             $aiPayload = is_array($payload['ai_config'] ?? null) ? $payload['ai_config'] : [];
             $aiConfig = AiConfig::query()->create([

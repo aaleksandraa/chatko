@@ -19,6 +19,7 @@ class TenantAdminController extends Controller
      * @var array<int, string>
      */
     private const MANAGE_ROLES = ['owner', 'admin'];
+    private const SYSTEM_ADMIN_EFFECTIVE_ROLE = 'admin';
 
     public function index(Request $request): JsonResponse
     {
@@ -29,28 +30,47 @@ class TenantAdminController extends Controller
 
         $token = $request->attributes->get('api_token');
         $currentTenantId = $token instanceof ApiToken ? (int) ($token->tenant_id ?? 0) : 0;
+        $isSystemAdmin = (bool) $user->is_system_admin;
 
-        $tenants = $user->tenants()
-            ->select([
-                'tenants.id',
-                'tenants.uuid',
-                'tenants.name',
-                'tenants.slug',
-                'tenants.domain',
-                'tenants.status',
-                'tenants.locale',
-                'tenants.timezone',
-                'tenants.brand_name',
-                'tenants.support_email',
-                'tenants.created_at',
-                'tenants.updated_at',
-            ])
-            ->orderBy('tenants.name')
-            ->get();
+        $tenantColumns = [
+            'tenants.id',
+            'tenants.uuid',
+            'tenants.name',
+            'tenants.slug',
+            'tenants.domain',
+            'tenants.status',
+            'tenants.locale',
+            'tenants.timezone',
+            'tenants.brand_name',
+            'tenants.support_email',
+            'tenants.created_at',
+            'tenants.updated_at',
+        ];
+
+        if ($isSystemAdmin) {
+            $memberships = $user->tenants()->withPivot('role')->get()->keyBy('id');
+            $tenants = Tenant::query()
+                ->select($tenantColumns)
+                ->orderBy('tenants.name')
+                ->get()
+                ->map(function (Tenant $tenant) use ($memberships): Tenant {
+                    $membership = $memberships->get((int) $tenant->id);
+                    if ($membership instanceof Tenant && $membership->pivot !== null) {
+                        $tenant->setRelation('pivot', $membership->pivot);
+                    }
+
+                    return $tenant;
+                });
+        } else {
+            $tenants = $user->tenants()
+                ->select($tenantColumns)
+                ->orderBy('tenants.name')
+                ->get();
+        }
 
         return response()->json([
             'data' => $tenants
-                ->map(fn (Tenant $tenant): array => $this->serializeMembershipTenant($tenant, $currentTenantId))
+                ->map(fn (Tenant $tenant): array => $this->serializeMembershipTenant($tenant, $currentTenantId, $isSystemAdmin))
                 ->values(),
         ]);
     }
@@ -69,6 +89,8 @@ class TenantAdminController extends Controller
             'ttl_minutes' => ['nullable', 'integer', 'min:15', 'max:10080'],
         ]);
 
+        $isSystemAdmin = (bool) $user->is_system_admin;
+
         $query = $user->tenants()->withPivot('role');
         if (! empty($payload['tenant_id'])) {
             $query->where('tenants.id', (int) $payload['tenant_id']);
@@ -76,14 +98,33 @@ class TenantAdminController extends Controller
             $query->where('tenants.slug', (string) $payload['tenant_slug']);
         }
 
-        $tenant = $query->first();
-        if (! $tenant instanceof Tenant) {
-            return response()->json(['message' => 'User is not a member of requested tenant.'], 403);
-        }
+        $membership = $query->first();
+        $tenant = null;
+        $role = '';
 
-        $role = (string) ($tenant->pivot?->role ?? '');
-        if ($role === '') {
-            return response()->json(['message' => 'No role assigned for this tenant.'], 403);
+        if ($membership instanceof Tenant) {
+            $tenant = $membership;
+            $role = (string) ($membership->pivot?->role ?? '');
+            if ($role === '') {
+                return response()->json(['message' => 'No role assigned for this tenant.'], 403);
+            }
+            if ($isSystemAdmin && ! in_array($role, self::MANAGE_ROLES, true)) {
+                $role = self::SYSTEM_ADMIN_EFFECTIVE_ROLE;
+            }
+        } else {
+            if (! $isSystemAdmin) {
+                return response()->json(['message' => 'User is not a member of requested tenant.'], 403);
+            }
+
+            $tenant = ! empty($payload['tenant_id'])
+                ? Tenant::query()->find((int) $payload['tenant_id'])
+                : Tenant::query()->where('slug', (string) $payload['tenant_slug'])->first();
+
+            if (! $tenant instanceof Tenant) {
+                return response()->json(['message' => 'Tenant not found.'], 404);
+            }
+
+            $role = self::SYSTEM_ADMIN_EFFECTIVE_ROLE;
         }
 
         $expiresAt = null;
@@ -135,15 +176,26 @@ class TenantAdminController extends Controller
         if (! $user instanceof User) {
             return response()->json(['message' => 'Unauthorized.'], 401);
         }
+        $isSystemAdmin = (bool) $user->is_system_admin;
 
-        $tenant = $user->tenants()->withPivot('role')->where('tenants.id', $id)->first();
-        if (! $tenant instanceof Tenant) {
-            return response()->json(['message' => 'Tenant membership not found.'], 404);
-        }
+        $tenant = null;
+        $membershipRole = '';
+        if ($isSystemAdmin) {
+            $tenant = Tenant::query()->find($id);
+            if (! $tenant instanceof Tenant) {
+                return response()->json(['message' => 'Tenant not found.'], 404);
+            }
+            $membershipRole = 'system_admin';
+        } else {
+            $tenant = $user->tenants()->withPivot('role')->where('tenants.id', $id)->first();
+            if (! $tenant instanceof Tenant) {
+                return response()->json(['message' => 'Tenant membership not found.'], 404);
+            }
 
-        $membershipRole = (string) ($tenant->pivot?->role ?? '');
-        if (! in_array($membershipRole, self::MANAGE_ROLES, true)) {
-            return response()->json(['message' => 'Only owner/admin can edit tenant settings.'], 403);
+            $membershipRole = (string) ($tenant->pivot?->role ?? '');
+            if (! in_array($membershipRole, self::MANAGE_ROLES, true)) {
+                return response()->json(['message' => 'Only owner/admin can edit tenant settings.'], 403);
+            }
         }
 
         $payload = $request->validate([
@@ -181,7 +233,7 @@ class TenantAdminController extends Controller
         $currentTenantId = $currentToken instanceof ApiToken ? (int) ($currentToken->tenant_id ?? 0) : 0;
 
         return response()->json([
-            'data' => $this->serializeMembershipTenant($tenant, $currentTenantId),
+            'data' => $this->serializeMembershipTenant($tenant, $currentTenantId, $isSystemAdmin),
         ]);
     }
 
@@ -194,15 +246,26 @@ class TenantAdminController extends Controller
         if (! $user instanceof User) {
             return response()->json(['message' => 'Unauthorized.'], 401);
         }
+        $isSystemAdmin = (bool) $user->is_system_admin;
 
-        $tenant = $user->tenants()->withPivot('role')->where('tenants.id', $id)->first();
-        if (! $tenant instanceof Tenant) {
-            return response()->json(['message' => 'Tenant membership not found.'], 404);
-        }
+        $tenant = null;
+        $membershipRole = '';
+        if ($isSystemAdmin) {
+            $tenant = Tenant::query()->find($id);
+            if (! $tenant instanceof Tenant) {
+                return response()->json(['message' => 'Tenant not found.'], 404);
+            }
+            $membershipRole = 'system_admin';
+        } else {
+            $tenant = $user->tenants()->withPivot('role')->where('tenants.id', $id)->first();
+            if (! $tenant instanceof Tenant) {
+                return response()->json(['message' => 'Tenant membership not found.'], 404);
+            }
 
-        $membershipRole = (string) ($tenant->pivot?->role ?? '');
-        if ($membershipRole !== 'owner') {
-            return response()->json(['message' => 'Only owner can delete tenant.'], 403);
+            $membershipRole = (string) ($tenant->pivot?->role ?? '');
+            if ($membershipRole !== 'owner') {
+                return response()->json(['message' => 'Only owner can delete tenant.'], 403);
+            }
         }
 
         $currentToken = $request->attributes->get('api_token');
@@ -226,9 +289,11 @@ class TenantAdminController extends Controller
 
         $tenant->delete();
 
-        $remainingTenants = Tenant::query()
-            ->whereHas('users', fn ($query) => $query->where('users.id', $user->id))
-            ->count();
+        $remainingTenants = $isSystemAdmin
+            ? (int) Tenant::query()->count()
+            : (int) Tenant::query()
+                ->whereHas('users', fn ($query) => $query->where('users.id', $user->id))
+                ->count();
 
         return response()->json([
             'message' => 'Tenant deleted.',
@@ -242,9 +307,18 @@ class TenantAdminController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function serializeMembershipTenant(Tenant $tenant, int $currentTenantId): array
+    private function serializeMembershipTenant(Tenant $tenant, int $currentTenantId, bool $isSystemAdmin = false): array
     {
-        $role = (string) ($tenant->pivot?->role ?? '');
+        $membershipRole = (string) ($tenant->pivot?->role ?? '');
+        $role = $membershipRole;
+        $canManage = in_array($membershipRole, self::MANAGE_ROLES, true);
+        $canDelete = $membershipRole === 'owner';
+
+        if ($isSystemAdmin) {
+            $role = in_array($membershipRole, self::MANAGE_ROLES, true) ? $membershipRole : self::SYSTEM_ADMIN_EFFECTIVE_ROLE;
+            $canManage = true;
+            $canDelete = true;
+        }
 
         return [
             'id' => (int) $tenant->id,
@@ -258,8 +332,9 @@ class TenantAdminController extends Controller
             'brand_name' => $tenant->brand_name === null ? null : (string) $tenant->brand_name,
             'support_email' => $tenant->support_email === null ? null : (string) $tenant->support_email,
             'role' => $role,
-            'can_manage' => in_array($role, self::MANAGE_ROLES, true),
-            'can_delete' => $role === 'owner',
+            'can_manage' => $canManage,
+            'can_delete' => $canDelete,
+            'is_member' => $membershipRole !== '',
             'is_current' => $currentTenantId > 0 && (int) $tenant->id === $currentTenantId,
             'created_at' => $tenant->created_at,
             'updated_at' => $tenant->updated_at,

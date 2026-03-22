@@ -252,6 +252,72 @@ class TenantManagementApiTest extends TestCase
             ->assertJsonPath('message', 'Insufficient role. Required: admin, current: support.');
     }
 
+    public function test_system_admin_can_list_switch_and_manage_non_member_tenant(): void
+    {
+        $externalTenant = Tenant::query()->create([
+            'uuid' => (string) Str::uuid(),
+            'name' => 'External Tenant',
+            'slug' => 'external-tenant',
+            'plan_id' => $this->tenantOwner->plan_id,
+            'locale' => 'bs',
+            'timezone' => 'Europe/Sarajevo',
+            'status' => 'active',
+        ]);
+
+        $systemAdmin = User::query()->create([
+            'name' => 'System Admin',
+            'email' => 'system-admin-tenant@test.local',
+            'password' => Hash::make('password123'),
+            'is_system_admin' => true,
+        ]);
+        $this->tenantOwner->users()->attach($systemAdmin->id, ['role' => 'admin']);
+
+        $tokenService = app(ApiTokenService::class);
+        $issued = $tokenService->issueToken(
+            $systemAdmin,
+            $this->tenantOwner,
+            'admin',
+            $tokenService->abilitiesForRole('admin'),
+            'system_admin_test_token',
+            null,
+        );
+        $token = $issued['plain_text_token'];
+
+        $this->withHeaders([
+            'Authorization' => 'Bearer '.$token,
+            'X-Tenant-Slug' => $this->tenantOwner->slug,
+        ])->getJson('/api/admin/auth/tenants')
+            ->assertOk()
+            ->assertJsonFragment([
+                'slug' => $externalTenant->slug,
+                'role' => 'admin',
+                'can_manage' => true,
+                'can_delete' => true,
+                'is_member' => false,
+            ]);
+
+        $switch = $this->withHeaders([
+            'Authorization' => 'Bearer '.$token,
+            'X-Tenant-Slug' => $this->tenantOwner->slug,
+        ])->postJson('/api/admin/auth/switch-tenant', [
+            'tenant_id' => $externalTenant->id,
+        ]);
+
+        $switch->assertOk()
+            ->assertJsonPath('data.tenant.slug', $externalTenant->slug)
+            ->assertJsonPath('data.role', 'admin');
+
+        $switchedToken = (string) $switch->json('data.token');
+        $this->assertNotSame('', $switchedToken);
+
+        $this->withHeaders([
+            'Authorization' => 'Bearer '.$switchedToken,
+            'X-Tenant-Slug' => $externalTenant->slug,
+        ])->putJson("/api/admin/auth/tenants/{$externalTenant->id}", [
+            'name' => 'External Tenant Updated',
+        ])->assertOk()->assertJsonPath('data.name', 'External Tenant Updated');
+    }
+
     /**
      * @return array<string, string>
      */
