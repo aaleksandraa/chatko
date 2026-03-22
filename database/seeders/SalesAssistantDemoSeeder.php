@@ -25,9 +25,18 @@ class SalesAssistantDemoSeeder extends Seeder
         $ownerName = (string) env('DEMO_OWNER_NAME', 'Demo Owner');
         $ownerEmail = (string) env('DEMO_OWNER_EMAIL', 'owner@demo.local');
         $ownerPassword = (string) env('DEMO_OWNER_PASSWORD', 'password123');
-        $ownerIsSystemAdmin = filter_var(env('DEMO_OWNER_IS_SYSTEM_ADMIN', true), FILTER_VALIDATE_BOOL);
+        $ownerIsSystemAdmin = filter_var(env('DEMO_OWNER_IS_SYSTEM_ADMIN', false), FILTER_VALIDATE_BOOL);
+        $systemAdminName = (string) env('SYSTEM_ADMIN_NAME', 'System Admin');
+        $systemAdminEmail = (string) env('SYSTEM_ADMIN_EMAIL', 'system@demo.local');
+        $systemAdminPassword = (string) env('SYSTEM_ADMIN_PASSWORD', 'password123');
+        $systemAdminAttachDemoTenant = filter_var(env('SYSTEM_ADMIN_ATTACH_DEMO_TENANT', true), FILTER_VALIDATE_BOOL);
+        $systemAdminDemoRoleRaw = strtolower(trim((string) env('SYSTEM_ADMIN_DEMO_ROLE', 'admin')));
+        $systemAdminDemoRole = in_array($systemAdminDemoRoleRaw, ['support', 'editor', 'admin', 'owner'], true)
+            ? $systemAdminDemoRoleRaw
+            : 'admin';
         $supportEmail = (string) env('DEMO_SUPPORT_EMAIL', 'support@demo.local');
         $ownerPasswordHash = Hash::make($ownerPassword);
+        $systemAdminPasswordHash = Hash::make($systemAdminPassword);
 
         $plan = Plan::query()->firstOrCreate(
             ['code' => 'starter'],
@@ -73,6 +82,21 @@ class SalesAssistantDemoSeeder extends Seeder
         $tenant->users()->syncWithoutDetaching([
             $owner->id => ['role' => 'owner'],
         ]);
+
+        $systemAdmin = User::query()->updateOrCreate(
+            ['email' => $systemAdminEmail],
+            [
+                'name' => $systemAdminName,
+                'password' => $systemAdminPasswordHash,
+                'is_system_admin' => true,
+            ],
+        );
+
+        if ($systemAdminAttachDemoTenant) {
+            $tenant->users()->syncWithoutDetaching([
+                $systemAdmin->id => ['role' => $systemAdminDemoRole],
+            ]);
+        }
 
         AiConfig::query()->updateOrCreate(
             ['tenant_id' => $tenant->id],
@@ -161,6 +185,7 @@ class SalesAssistantDemoSeeder extends Seeder
         $this->command->info('Demo tenant created.');
         $this->command->info('Widget public key: '.$widget->public_key);
         $this->command->info('Use header X-Tenant-Slug: '.$tenant->slug.' for admin API routes.');
+        $this->command->info("System admin login: {$systemAdminEmail} / {$systemAdminPassword} (tenant_slug: {$tenantSlug})");
         $this->command->info("Admin login: {$ownerEmail} / {$ownerPassword} (tenant_slug: {$tenantSlug})");
     }
 }

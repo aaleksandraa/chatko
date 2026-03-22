@@ -103,6 +103,13 @@ Seeder kreira demo owner nalog:
 - password: `password123`
 - tenant slug: `demo-shop`
 
+Seeder kreira i platform-level system admin nalog:
+
+- email: `system@demo.local`
+- password: `password123`
+- tenant slug: `demo-shop`
+- `is_system_admin=true` (jedini koji smije raditi tenant onboarding / kreiranje novih tenant-a)
+
 Napomena: ove vrijednosti su sada konfigurabilne kroz env varijable:
 
 - `SEED_DEMO_TENANT`
@@ -111,6 +118,12 @@ Napomena: ove vrijednosti su sada konfigurabilne kroz env varijable:
 - `DEMO_OWNER_NAME`
 - `DEMO_OWNER_EMAIL`
 - `DEMO_OWNER_PASSWORD`
+- `DEMO_OWNER_IS_SYSTEM_ADMIN`
+- `SYSTEM_ADMIN_NAME`
+- `SYSTEM_ADMIN_EMAIL`
+- `SYSTEM_ADMIN_PASSWORD`
+- `SYSTEM_ADMIN_ATTACH_DEMO_TENANT`
+- `SYSTEM_ADMIN_DEMO_ROLE`
 - `DEMO_SUPPORT_EMAIL`
 
 Login token:

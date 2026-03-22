@@ -8,7 +8,7 @@ export async function loginAsDemoAdmin(page) {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Chatko Control Room' })).toBeVisible();
 
-    await page.fill('#login-email', 'owner@demo.local');
+    await page.fill('#login-email', 'system@demo.local');
     await page.fill('#login-password', 'password123');
     await page.click('#login-form button[type="submit"]');
 
