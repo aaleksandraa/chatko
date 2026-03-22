@@ -215,6 +215,34 @@ Staging Docker stack (Postgres + pgvector + Redis) je spreman:
 - `docs/STAGING_DEPLOYMENT.md`
 - `docs/STAGING_READINESS_CHECKLIST.md`
 - `docs/ADMIN_OPERATIVNO_UPUTSTVO.md`
+- `docs/HORIZON_SETUP.md`
+
+## Operativne komande (queue/scheduler)
+
+Managed queue runtime (Horizon ako postoji, inace queue worker):
+
+```bash
+php artisan queue:run-managed --tries=3 --sleep=1 --timeout=120
+```
+
+Automatski scheduler worker:
+
+```bash
+php artisan schedule:work
+```
+
+Auto-sync dispatch (manual check):
+
+```bash
+php artisan integrations:sync-scheduled --dry-run --limit=200
+php artisan integrations:sync-scheduled --limit=200
+```
+
+Freshness report (koliko su integracije azurne):
+
+```bash
+php artisan integrations:freshness-report --limit=200
+```
 
 ## Trenutna ogranicenja
 

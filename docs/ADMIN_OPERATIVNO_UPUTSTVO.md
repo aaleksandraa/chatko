@@ -71,7 +71,35 @@ php artisan queue:restart
 Ako worker nije pokrenut:
 
 ```bash
-php artisan queue:work --tries=3
+php artisan queue:run-managed --tries=3 --sleep=1 --timeout=120
+```
+
+Za automatski periodicni sync integracija (zalihe/cijene) pokreni scheduler:
+
+```bash
+* * * * * cd /var/www/chatko/backend && php artisan schedule:run >> /dev/null 2>&1
+```
+
+Scheduler koristi komandu:
+
+```bash
+php artisan integrations:sync-scheduled --limit=200
+```
+
+Sync frequency se podesava po integraciji (`manual`, `every_5m`, `every_15m`, `every_30m`, `hourly`, `every_2h`, `every_6h`, `daily`).
+
+Ako je Laravel Horizon dostupan u toj instalaciji, umjesto `queue:work` moze se koristiti:
+
+```bash
+php artisan horizon
+```
+
+Detaljan setup je u: `docs/HORIZON_SETUP.md`.
+
+Provjera azurnosti integracija (stale sync):
+
+```bash
+php artisan integrations:freshness-report --limit=200
 ```
 
 Napomena:
@@ -512,6 +540,13 @@ Ako `ready` vraca `degraded`:
 - provjeriti DB konekciju
 - provjeriti write dozvole nad `storage/`
 - provjeriti worker proces
+- provjeriti scheduler proces
+
+Za systemd setup (queue + scheduler) koristi:
+
+- `deploy/systemd/chatko-queue.service`
+- `deploy/systemd/chatko-scheduler.service`
+- uputstvo: `deploy/systemd/README.md`
 
 ---
 

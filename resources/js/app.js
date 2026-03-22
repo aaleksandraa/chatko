@@ -375,6 +375,7 @@ const elements = {
     integrationQuickGuide: document.getElementById('integration-quick-guide'),
     integrationApplyTemplate: document.getElementById('integration-apply-template'),
     integrationBaseUrl: document.getElementById('integration-base-url'),
+    integrationSyncFrequency: document.getElementById('integration-sync-frequency'),
     integrationAuthType: document.getElementById('integration-auth-type'),
     integrationCredentials: document.getElementById('integration-credentials'),
     integrationConfig: document.getElementById('integration-config'),
@@ -1657,6 +1658,7 @@ function bindIntegrations() {
                 credentials: integrationPayload.credentials,
                 config_json: integrationPayload.config_json,
                 mapping_json: integrationPayload.mapping_json,
+                sync_frequency: emptyToUndefined(elements.integrationSyncFrequency?.value) ?? 'every_15m',
             });
 
             await request('/api/admin/integrations', { method: 'POST', body: payload });
@@ -2901,6 +2903,29 @@ function toDateTimeLocalValue(value) {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function integrationSyncFrequencyOptions(currentValue = 'every_15m') {
+    const options = [
+        { value: 'every_5m', label: 'every_5m (najazurnije)' },
+        { value: 'every_15m', label: 'every_15m (recommended)' },
+        { value: 'every_30m', label: 'every_30m' },
+        { value: 'hourly', label: 'hourly' },
+        { value: 'every_2h', label: 'every_2h' },
+        { value: 'every_6h', label: 'every_6h' },
+        { value: 'daily', label: 'daily' },
+        { value: 'manual', label: 'manual (off)' },
+    ];
+
+    const normalizedCurrent = String(currentValue ?? '').trim();
+    if (normalizedCurrent !== '' && !options.some((item) => item.value === normalizedCurrent)) {
+        options.push({
+            value: normalizedCurrent,
+            label: `${normalizedCurrent} (custom legacy)`,
+        });
+    }
+
+    return options;
+}
+
 function integrationEditFields(integration) {
     return [
         { key: 'name', label: 'Name', type: 'text', value: integration.name ?? '', required: true },
@@ -2920,7 +2945,13 @@ function integrationEditFields(integration) {
         },
         { key: 'base_url', label: 'Base URL', type: 'text', value: integration.base_url ?? '', nullable: true },
         { key: 'auth_type', label: 'Auth type', type: 'text', value: integration.auth_type ?? '', nullable: true },
-        { key: 'sync_frequency', label: 'Sync frequency', type: 'text', value: integration.sync_frequency ?? '', nullable: true },
+        {
+            key: 'sync_frequency',
+            label: 'Sync frequency',
+            type: 'select',
+            value: integration.sync_frequency ?? 'every_15m',
+            options: integrationSyncFrequencyOptions(integration.sync_frequency ?? 'every_15m'),
+        },
         {
             key: 'credentials',
             label: integration.has_credentials
@@ -3243,6 +3274,12 @@ async function loadIntegrations() {
                 <td>
                     <span class="chip">${escapeHtml(String(row.status ?? '-'))}</span>
                     ${row.last_error ? `<div class="muted">${escapeHtml(String(row.last_error))}</div>` : ''}
+                    <div class="muted">Auto sync: ${escapeHtml(String(row.sync_frequency ?? 'manual'))}</div>
+                    <div class="muted">Last sync: ${escapeHtml(formatTimestamp(row.last_sync_at))}</div>
+                    <div class="muted">
+                        Next due: ${escapeHtml(formatTimestamp(row.next_sync_due_at))}
+                        ${row.is_sync_overdue ? '<span class="chip">OVERDUE</span>' : ''}
+                    </div>
                 </td>
                 <td>${escapeHtml(String(row.auth_type ?? '-'))}</td>
                 <td>${row.has_credentials ? 'set' : '-'}</td>

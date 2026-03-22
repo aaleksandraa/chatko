@@ -18,7 +18,7 @@ WORKDIR /var/www/html
 
 COPY docker/staging/entrypoint.sh /usr/local/bin/staging-entrypoint
 COPY docker/staging/worker-entrypoint.sh /usr/local/bin/staging-worker
-RUN chmod +x /usr/local/bin/staging-entrypoint /usr/local/bin/staging-worker
+COPY docker/staging/scheduler-entrypoint.sh /usr/local/bin/staging-scheduler
+RUN chmod +x /usr/local/bin/staging-entrypoint /usr/local/bin/staging-worker /usr/local/bin/staging-scheduler
 
 CMD ["php-fpm"]
-

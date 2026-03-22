@@ -27,7 +27,8 @@ Services:
 
 - `web` on `http://localhost:8080`
 - `app` (php-fpm)
-- `worker` (queue worker)
+- `worker` (managed queue runtime; Horizon preferred, queue worker fallback)
+- `scheduler` (`php artisan schedule:work`)
 - `db` (`pgvector/pgvector:pg16`)
 - `redis`
 
@@ -37,6 +38,7 @@ Services:
 docker compose -f docker-compose.staging.yml --env-file .env.staging exec app php artisan migrate:status
 docker compose -f docker-compose.staging.yml --env-file .env.staging exec app php artisan route:list --path=api
 docker compose -f docker-compose.staging.yml --env-file .env.staging logs -f worker
+docker compose -f docker-compose.staging.yml --env-file .env.staging logs -f scheduler
 curl -sSf http://localhost:8080/up
 curl -sSf http://localhost:8080/api/health/live
 curl -sSf http://localhost:8080/api/health/ready
@@ -46,6 +48,16 @@ curl -sSf http://localhost:8080/api/health/ready
 
 - `database/migrations/2026_03_21_000002_enable_pgvector_support.php` enables pgvector and ivfflat indexes on PostgreSQL.
 - Queue-backed tasks are required for sync/import/indexing.
+- `worker` koristi `queue:run-managed` (Horizon ako postoji, fallback na queue:work).
+- Scheduler je vec pokrenut kao poseban `scheduler` container (`schedule:work`), pa cron nije potreban u Docker staging setup-u.
+
+- Manual check for due sync dispatch:
+
+```bash
+php artisan integrations:sync-scheduled --dry-run --limit=200
+php artisan integrations:sync-scheduled --limit=200
+```
+
 - Recommended next step is to run at least one `initial` WooCommerce sync in staging and inspect `import_jobs` and `import_job_rows`.
 - Admin action audit trail is available via `GET /api/admin/audit-logs` (admin role, tenant scoped).
 - Full pre-release checklist is in `docs/STAGING_READINESS_CHECKLIST.md`.

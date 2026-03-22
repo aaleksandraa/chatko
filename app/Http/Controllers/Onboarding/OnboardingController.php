@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Widget;
 use App\Services\Auth\ApiTokenService;
 use App\Services\Integrations\IntegrationConnectionService;
+use App\Support\IntegrationSyncFrequency;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -61,7 +62,7 @@ class OnboardingController extends Controller
             'integration.credentials' => ['nullable', 'array'],
             'integration.config_json' => ['nullable', 'array'],
             'integration.mapping_json' => ['nullable', 'array'],
-            'integration.sync_frequency' => ['nullable', 'string', 'max:64'],
+            'integration.sync_frequency' => ['nullable', \Illuminate\Validation\Rule::in(IntegrationSyncFrequency::allowedValues())],
 
             'ai_config' => ['nullable', 'array'],
             'ai_config.provider' => ['nullable', 'string', 'max:64'],

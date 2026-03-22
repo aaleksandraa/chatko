@@ -7,4 +7,4 @@ if [ ! -f vendor/autoload.php ]; then
   composer install --no-interaction --prefer-dist --optimize-autoloader
 fi
 
-php artisan queue:run-managed --tries=3 --sleep=1 --timeout=120 --queue=default
+php artisan schedule:work

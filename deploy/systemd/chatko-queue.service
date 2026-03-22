@@ -1,0 +1,18 @@
+[Unit]
+Description=Chatko Queue Runtime (Horizon preferred, queue:work fallback)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/chatko/backend
+ExecStart=/usr/bin/php artisan queue:run-managed --tries=3 --sleep=1 --timeout=120 --queue=default
+ExecReload=/usr/bin/php artisan queue:restart
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

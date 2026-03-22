@@ -10,7 +10,9 @@ use App\Services\Integrations\IntegrationConnectionService;
 use App\Services\Integrations\SourceSyncDispatcher;
 use App\Services\Integrations\SourceTestService;
 use App\Services\Audit\AuditLogService;
+use App\Support\IntegrationSyncFrequency;
 use App\Support\TenantContext;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -45,7 +47,7 @@ class IntegrationController extends Controller
             'credentials' => ['nullable', 'array'],
             'config_json' => ['nullable', 'array'],
             'mapping_json' => ['nullable', 'array'],
-            'sync_frequency' => ['nullable', 'string', 'max:64'],
+            'sync_frequency' => ['nullable', Rule::in(IntegrationSyncFrequency::allowedValues())],
         ]);
 
         $connection = $service->create($tenant, $payload);
@@ -69,7 +71,7 @@ class IntegrationController extends Controller
             'credentials' => ['nullable', 'array'],
             'config_json' => ['nullable', 'array'],
             'mapping_json' => ['nullable', 'array'],
-            'sync_frequency' => ['nullable', 'string', 'max:64'],
+            'sync_frequency' => ['nullable', Rule::in(IntegrationSyncFrequency::allowedValues())],
         ]);
 
         $before = $connection->toArray();
@@ -179,6 +181,30 @@ class IntegrationController extends Controller
      */
     private function serializeConnection(IntegrationConnection $connection): array
     {
+        $syncFrequency = IntegrationSyncFrequency::normalize((string) ($connection->sync_frequency ?? ''));
+        $syncIntervalSeconds = IntegrationSyncFrequency::intervalSeconds($syncFrequency);
+
+        $lastSyncAt = null;
+        if ($connection->last_sync_at !== null) {
+            try {
+                $lastSyncAt = CarbonImmutable::parse($connection->last_sync_at);
+            } catch (\Throwable) {
+                $lastSyncAt = null;
+            }
+        }
+
+        $now = CarbonImmutable::now();
+        $lastSyncAgeSeconds = $lastSyncAt !== null ? max(0, $lastSyncAt->diffInSeconds($now)) : null;
+
+        $nextSyncDueAt = null;
+        $isSyncOverdue = false;
+        if ($syncIntervalSeconds !== null) {
+            $nextSyncDueAt = $lastSyncAt !== null
+                ? $lastSyncAt->addSeconds($syncIntervalSeconds)
+                : $now;
+            $isSyncOverdue = $nextSyncDueAt->lessThanOrEqualTo($now);
+        }
+
         return [
             'id' => (int) $connection->id,
             'tenant_id' => (int) $connection->tenant_id,
@@ -189,9 +215,13 @@ class IntegrationController extends Controller
             'auth_type' => $connection->auth_type,
             'config_json' => $connection->config_json,
             'mapping_json' => $connection->mapping_json,
-            'sync_frequency' => $connection->sync_frequency,
+            'sync_frequency' => $syncFrequency,
+            'sync_interval_seconds' => $syncIntervalSeconds,
             'last_tested_at' => $connection->last_tested_at,
             'last_sync_at' => $connection->last_sync_at,
+            'last_sync_age_seconds' => $lastSyncAgeSeconds,
+            'next_sync_due_at' => $nextSyncDueAt?->toIso8601String(),
+            'is_sync_overdue' => $isSyncOverdue,
             'last_error' => $connection->last_error,
             'has_credentials' => is_string($connection->credentials_encrypted) && trim($connection->credentials_encrypted) !== '',
             'created_at' => $connection->created_at,

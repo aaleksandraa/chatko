@@ -28,6 +28,20 @@ services:
       - redis
     command: ["/usr/local/bin/staging-worker"]
 
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/staging/Dockerfile
+    env_file:
+      - .env.staging
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      - app
+      - db
+      - redis
+    command: ["/usr/local/bin/staging-scheduler"]
+
   web:
     image: nginx:1.27-alpine
     volumes:
@@ -56,4 +70,3 @@ services:
 
 volumes:
   pgdata:
-

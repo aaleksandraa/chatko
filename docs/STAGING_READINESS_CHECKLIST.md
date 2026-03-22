@@ -58,6 +58,13 @@ Expected: `status: "ok"` and all checks marked `ok: true`.
 ## 4) Background Jobs and Ingestion
 
 - [ ] Worker process is running and healthy.
+- [ ] Scheduler process is running and healthy (`schedule:work` service/container), ili je cron konfigurisan za `schedule:run`.
+- [ ] Due auto-sync dispatch test passes:
+
+```bash
+php artisan integrations:sync-scheduled --dry-run --limit=200
+```
+
 - [ ] Run one integration `initial` sync and confirm:
   - records in `import_jobs`
   - no systemic errors in `import_job_rows`

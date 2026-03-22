@@ -361,6 +361,18 @@
                                     <option value="manual">Manual</option>
                                 </select>
                             </label>
+                            <label>Auto sync frequency
+                                <select id="integration-sync-frequency">
+                                    <option value="every_5m">every_5m (najazurnije zalihe)</option>
+                                    <option value="every_15m" selected>every_15m (recommended)</option>
+                                    <option value="every_30m">every_30m</option>
+                                    <option value="hourly">hourly</option>
+                                    <option value="every_2h">every_2h</option>
+                                    <option value="every_6h">every_6h</option>
+                                    <option value="daily">daily</option>
+                                    <option value="manual">manual (bez auto sync-a)</option>
+                                </select>
+                            </label>
                             <p id="integration-quick-guide" class="muted">
                                 Izaberi tip integracije i prikazace se samo obavezna polja za taj provider.
                             </p>
