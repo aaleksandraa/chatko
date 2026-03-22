@@ -1681,17 +1681,78 @@ function bindIntegrations() {
 
             if (action === 'test') {
                 const result = await request(`/api/admin/integrations/${integrationId}/test`, { method: 'POST' });
-                showAlert(`Test status: ${escapeHtml(String(result.data?.status ?? 'unknown'))}`, 'ok');
+                const ok = Boolean(result.data?.ok);
+                const message = String(result.data?.message ?? (ok ? 'Connection test passed.' : 'Connection test failed.'));
+                showAlert(`${ok ? 'Test uspjesan' : 'Test nije uspio'}: ${message}`, ok ? 'ok' : 'error');
+                await loadIntegrations();
                 return;
             }
 
             if (action === 'sync_initial' || action === 'sync_delta') {
                 const mode = action === 'sync_initial' ? 'initial' : 'delta';
-                await request(`/api/admin/integrations/${integrationId}/sync`, {
+                const syncResponse = await request(`/api/admin/integrations/${integrationId}/sync`, {
                     method: 'POST',
-                    body: { mode },
+                    body: {
+                        mode,
+                        validate_connection: true,
+                    },
                 });
-                showAlert(`Sync pokrenut (${mode}).`, 'ok');
+                const importJobId = intOrUndefined(syncResponse?.data?.id);
+                if (importJobId === undefined || importJobId <= 0) {
+                    showAlert(`Sync pokrenut (${mode}).`, 'ok');
+                    await loadImportJobs();
+                    await loadIntegrations();
+                    return;
+                }
+
+                showAlert(`Sync pokrenut (${mode}) [job #${importJobId}].`, 'ok');
+                await loadImportJobs();
+                await loadIntegrations();
+
+                const completedJob = await waitForImportJobCompletion(importJobId, {
+                    timeoutMs: 90000,
+                    pollMs: 2000,
+                });
+
+                await loadImportJobs();
+                await loadIntegrations();
+                await loadProducts();
+
+                if (!completedJob) {
+                    showAlert(
+                        `Sync job #${importJobId} je i dalje pending/processing. Provjerite queue worker/Horizon i Import Jobs tab.`,
+                        'error',
+                    );
+                    return;
+                }
+
+                const finalStatus = String(completedJob.status ?? '');
+                const success = intOrUndefined(completedJob.success_records) ?? 0;
+                const failed = intOrUndefined(completedJob.failed_records) ?? 0;
+                const skipped = intOrUndefined(completedJob.skipped_records) ?? 0;
+                const summary = String(completedJob.log_summary ?? '').trim();
+
+                if (finalStatus === 'failed') {
+                    throw new Error(summary !== '' ? summary : `Sync job #${importJobId} failed.`);
+                }
+
+                if (finalStatus === 'completed_with_errors') {
+                    showAlert(
+                        `Sync zavrsen uz greske (success=${success}, failed=${failed}, skipped=${skipped}). ${summary || ''}`.trim(),
+                        'error',
+                    );
+                    return;
+                }
+
+                if (success <= 0) {
+                    showAlert(
+                        `Sync zavrsen bez novih proizvoda. Provjerite mapping/filtere i Import Jobs detalje. ${summary || ''}`.trim(),
+                        'error',
+                    );
+                    return;
+                }
+
+                showAlert(`Sync zavrsen: importovano ${success} proizvoda.`, 'ok');
                 return;
             }
 
@@ -3162,7 +3223,10 @@ async function loadIntegrations() {
                 <td>${escapeHtml(String(row.id))}</td>
                 <td>${escapeHtml(String(row.name ?? '-'))}</td>
                 <td><span class="chip">${escapeHtml(String(row.type ?? '-'))}</span></td>
-                <td>${escapeHtml(String(row.status ?? '-'))}</td>
+                <td>
+                    <span class="chip">${escapeHtml(String(row.status ?? '-'))}</span>
+                    ${row.last_error ? `<div class="muted">${escapeHtml(String(row.last_error))}</div>` : ''}
+                </td>
                 <td>${escapeHtml(String(row.auth_type ?? '-'))}</td>
                 <td>${row.has_credentials ? 'set' : '-'}</td>
                 <td>
@@ -3366,6 +3430,34 @@ async function loadConversations() {
                 </td>
             </tr>
         `).join('');
+}
+
+function isImportJobTerminalStatus(status) {
+    const normalized = String(status ?? '').trim().toLowerCase();
+    return ['completed', 'completed_with_errors', 'failed', 'cancelled'].includes(normalized);
+}
+
+async function waitForImportJobCompletion(importJobId, options = {}) {
+    const timeoutMs = Number.isFinite(Number(options.timeoutMs)) ? Number(options.timeoutMs) : 90000;
+    const pollMs = Number.isFinite(Number(options.pollMs)) ? Number(options.pollMs) : 2000;
+    const startedAt = Date.now();
+
+    while ((Date.now() - startedAt) < timeoutMs) {
+        const response = await request('/api/admin/import-jobs');
+        const jobs = Array.isArray(response.data) ? response.data : [];
+        const job = jobs.find((item) => Number(item?.id) === Number(importJobId)) ?? null;
+        if (!job || !job.status) {
+            return null;
+        }
+
+        if (isImportJobTerminalStatus(job.status)) {
+            return job;
+        }
+
+        await delay(pollMs);
+    }
+
+    return null;
 }
 
 async function loadImportJobs() {
@@ -3931,6 +4023,12 @@ function intOrUndefined(value) {
         return undefined;
     }
     return number;
+}
+
+function delay(ms) {
+    return new Promise((resolve) => {
+        window.setTimeout(resolve, Math.max(0, Number(ms) || 0));
+    });
 }
 
 function roleRank(role) {

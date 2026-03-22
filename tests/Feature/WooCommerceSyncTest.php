@@ -89,6 +89,44 @@ class WooCommerceSyncTest extends TestCase
             ->assertJsonPath('data.ok', true);
     }
 
+    public function test_sync_endpoint_returns_validation_error_when_connection_test_fails(): void
+    {
+        Http::fake([
+            'https://shop.example.com/wp-json/wc/v3/products*' => Http::response([
+                'code' => 'woocommerce_rest_cannot_view',
+                'message' => 'Invalid consumer key.',
+            ], 401),
+        ]);
+
+        $create = $this->withHeaders($this->adminHeaders())->postJson('/api/admin/integrations', [
+            'type' => 'woocommerce',
+            'name' => 'Broken Woo',
+            'base_url' => 'https://shop.example.com',
+            'auth_type' => 'woocommerce_key_secret',
+            'credentials' => [
+                'consumer_key' => 'ck_invalid',
+                'consumer_secret' => 'cs_invalid',
+            ],
+        ]);
+
+        $create->assertCreated();
+        $connectionId = (int) $create->json('data.id');
+
+        $sync = $this->withHeaders($this->adminHeaders())
+            ->postJson('/api/admin/integrations/'.$connectionId.'/sync', [
+                'mode' => 'initial',
+                'validate_connection' => true,
+            ]);
+
+        $sync->assertStatus(422)
+            ->assertJsonPath('data.connection_ok', false);
+
+        $this->assertStringContainsString(
+            'Sync nije pokrenut:',
+            (string) $sync->json('message'),
+        );
+    }
+
     public function test_woocommerce_sync_job_handles_initial_and_delta_sync(): void
     {
         $credentials = app('encrypter')->encrypt(json_encode([

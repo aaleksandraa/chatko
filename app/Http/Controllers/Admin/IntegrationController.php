@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
+use App\Models\ImportJob;
 use App\Models\IntegrationConnection;
 use App\Services\Integrations\IntegrationConnectionService;
 use App\Services\Integrations\SourceSyncDispatcher;
@@ -98,24 +99,55 @@ class IntegrationController extends Controller
         return response()->json(['data' => $result]);
     }
 
-    public function sync(Request $request, TenantContext $tenantContext, SourceSyncDispatcher $sourceSyncDispatcher, int $id): JsonResponse
+    public function sync(
+        Request $request,
+        TenantContext $tenantContext,
+        SourceSyncDispatcher $sourceSyncDispatcher,
+        SourceTestService $sourceTestService,
+        int $id,
+    ): JsonResponse
     {
         $tenant = $this->tenantFromRequest($request, $tenantContext);
 
         $payload = $request->validate([
             'mode' => ['nullable', Rule::in(['initial', 'delta'])],
+            'validate_connection' => ['nullable', 'boolean'],
         ]);
 
         $connection = IntegrationConnection::query()
             ->where('tenant_id', $tenant->id)
             ->findOrFail($id);
 
+        $validateConnection = (bool) ($payload['validate_connection'] ?? false);
+        $testResult = null;
+
+        if ($validateConnection) {
+            $testResult = $sourceTestService->testConnection($connection);
+
+            if (! (bool) ($testResult['ok'] ?? false)) {
+                $message = (string) ($testResult['message'] ?? 'Connection test failed.');
+
+                return response()->json([
+                    'message' => 'Sync nije pokrenut: '.$message,
+                    'data' => [
+                        'connection_ok' => false,
+                        'connection_message' => $message,
+                    ],
+                ], 422);
+            }
+        }
+
         $mode = (string) ($payload['mode'] ?? 'delta');
-        $job = $sourceSyncDispatcher->dispatch($tenant, $connection, $mode, null);
+        $job = $sourceSyncDispatcher->dispatch($tenant, $connection, $mode, $request->user()?->id);
 
         return response()->json([
             'message' => 'Sync started.',
-            'data' => $job,
+            'data' => $this->serializeImportJob($job),
+            'meta' => [
+                'queue_connection' => (string) config('queue.default', 'sync'),
+                'connection_validated' => $validateConnection,
+                'connection_message' => is_array($testResult) ? ($testResult['message'] ?? null) : null,
+            ],
         ]);
     }
 
@@ -164,6 +196,34 @@ class IntegrationController extends Controller
             'has_credentials' => is_string($connection->credentials_encrypted) && trim($connection->credentials_encrypted) !== '',
             'created_at' => $connection->created_at,
             'updated_at' => $connection->updated_at,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function serializeImportJob(ImportJob $job): array
+    {
+        return [
+            'id' => (int) $job->id,
+            'tenant_id' => (int) $job->tenant_id,
+            'integration_connection_id' => $job->integration_connection_id !== null
+                ? (int) $job->integration_connection_id
+                : null,
+            'job_type' => (string) $job->job_type,
+            'source_type' => (string) $job->source_type,
+            'status' => (string) $job->status,
+            'total_records' => (int) ($job->total_records ?? 0),
+            'processed_records' => (int) ($job->processed_records ?? 0),
+            'success_records' => (int) ($job->success_records ?? 0),
+            'failed_records' => (int) ($job->failed_records ?? 0),
+            'skipped_records' => (int) ($job->skipped_records ?? 0),
+            'started_at' => $job->started_at,
+            'finished_at' => $job->finished_at,
+            'triggered_by' => $job->triggered_by,
+            'log_summary' => $job->log_summary,
+            'created_at' => $job->created_at,
+            'updated_at' => $job->updated_at,
         ];
     }
 }
