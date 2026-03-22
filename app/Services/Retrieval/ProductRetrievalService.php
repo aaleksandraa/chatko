@@ -377,7 +377,16 @@ SQL;
     private function extractKeywords(string $text): array
     {
         $tokens = preg_split('/\s+/', mb_strtolower($text)) ?: [];
-        $stopWords = ['i', 'ili', 'za', 'od', 'do', 'mi', 'je', 'na', 'u', 'sa', 'treba', 'nesto', 'sto', 'neko', 'neka', 'neki', 'neku', 'nekog'];
+        $stopWords = [
+            'i', 'ili', 'za', 'od', 'do', 'mi', 'je', 'na', 'u', 'sa',
+            'treba', 'nesto', 'sto', 'neko', 'neka', 'neki', 'neku', 'nekog',
+            'mogu', 'li', 'moze', 'mozemo', 'da',
+            'kupi', 'kupim', 'kupiti',
+            'naruci', 'naruciti', 'naruči', 'naručiti',
+            'narudzba', 'narudžba', 'narudzbu', 'narudžbu',
+            'poruciti', 'poručiti', 'porudzbina', 'porudžbina',
+            'checkout', 'korpa',
+        ];
 
         return array_values(array_unique(array_filter($tokens, function (string $token) use ($stopWords): bool {
             $clean = trim($token, " \t\n\r\0\x0B,.;:!?()[]{}\"'");

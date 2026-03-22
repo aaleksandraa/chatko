@@ -123,6 +123,12 @@ class ConversationOrchestratorService
         );
 
         if (is_array($checkoutFlow)) {
+            $checkoutItemProductIds = collect((array) data_get($checkoutFlow, 'checkout.items', []))
+                ->map(static fn ($item): int => (int) data_get($item, 'product_id', 0))
+                ->filter(static fn (int $id): bool => $id > 0)
+                ->values()
+                ->all();
+
             $checkoutAnswer = trim((string) ($checkoutFlow['answer_text'] ?? ''));
             if ($checkoutAnswer === '') {
                 $checkoutAnswer = 'Nastavljamo checkout korak.';
@@ -130,7 +136,7 @@ class ConversationOrchestratorService
 
             $preparedCheckoutResponse = [
                 'answer_text' => $checkoutAnswer,
-                'recommended_product_ids' => array_slice($allowedProductIds, 0, 3),
+                'recommended_product_ids' => $checkoutItemProductIds,
                 'cta_type' => 'checkout',
                 'cta_label' => 'Nastavi checkout',
                 'needs_handoff' => false,

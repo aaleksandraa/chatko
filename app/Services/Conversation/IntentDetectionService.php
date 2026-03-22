@@ -24,7 +24,7 @@ class IntentDetectionService
             return 'product_comparison';
         }
 
-        if (preg_match('/\b(kupi|kupim|naruci|checkout|korpa)\b/', $text)) {
+        if (preg_match('/\b(kupi|kupim|kupiti|naruci|naruciti|naru[cč]i|naru[cč]iti|narud[zž]b[au]|narud[zž]bu|checkout|korpa|poruciti|porud[zž]bina)\b/u', $text)) {
             return 'checkout_ready';
         }
 

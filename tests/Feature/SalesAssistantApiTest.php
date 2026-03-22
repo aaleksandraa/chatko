@@ -399,6 +399,41 @@ class SalesAssistantApiTest extends TestCase
             ->assertJsonCount(0, 'data.recommended_products');
     }
 
+    public function test_widget_message_generic_order_question_enters_checkout_without_random_recommendations(): void
+    {
+        Product::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'source_type' => 'manual',
+            'name' => 'Denman Cetka',
+            'price' => 39.00,
+            'currency' => 'BAM',
+            'in_stock' => true,
+            'stock_qty' => 8,
+            'status' => 'active',
+            'category_text' => 'cetke',
+            'short_description' => 'Cetka za stilizovanje.',
+        ]);
+
+        $session = $this->startWidgetSession('visitor-order-question');
+
+        $response = $this->postJson('/api/widget/message', [
+            'public_key' => $this->widget->public_key,
+            'message' => 'mogu li naruciti',
+            'conversation_id' => $session['conversation_id'],
+            'session_id' => $session['session_id'],
+            'visitor_uuid' => $session['visitor_uuid'],
+            'widget_session_token' => $session['widget_session_token'],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.cta.type', 'checkout')
+            ->assertJsonCount(0, 'data.recommended_products')
+            ->assertJsonPath('data.checkout.status', 'collecting_customer');
+
+        $answer = mb_strtolower((string) $response->json('data.answer_text'));
+        $this->assertStringContainsString('potvrdi koji proizvod', $answer);
+    }
+
     /**
      * @return array<string, string>
      */

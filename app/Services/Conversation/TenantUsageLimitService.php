@@ -160,7 +160,7 @@ class TenantUsageLimitService
     }
 
     /**
-     * @return array<string, int>
+     * @return array<string, int|string|null>
      */
     private function usageSnapshot(Tenant $tenant): array
     {
@@ -188,10 +188,25 @@ class TenantUsageLimitService
             ->selectRaw('COALESCE(SUM(COALESCE(tokens_input, 0) + COALESCE(tokens_output, 0)), 0) as total_tokens')
             ->value('total_tokens');
 
+        $lastAssistant = ConversationMessage::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('role', 'assistant')
+            ->latest('id')
+            ->first(['metadata_json', 'created_at']);
+
+        $lastResponseSource = null;
+        $lastResponseAt = null;
+        if ($lastAssistant instanceof ConversationMessage) {
+            $lastResponseSource = data_get($lastAssistant->metadata_json, 'response_source');
+            $lastResponseAt = $lastAssistant->created_at?->toIso8601String();
+        }
+
         return [
             'messages_monthly' => $messagesMonthly,
             'tokens_daily' => $tokensDaily,
             'tokens_monthly' => $tokensMonthly,
+            'last_response_source' => is_string($lastResponseSource) ? $lastResponseSource : null,
+            'last_response_at' => $lastResponseAt,
         ];
     }
 
@@ -386,4 +401,3 @@ class TenantUsageLimitService
         }
     }
 }
-

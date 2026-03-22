@@ -37,7 +37,9 @@ class CheckoutConversationService
 
         $updates = $this->extractCustomerUpdates($message);
         $quantity = $this->extractQuantity($message);
-        $this->applyItemsFromProducts($checkout, $products, $quantity);
+        if ($this->shouldAutoAttachProductFromSearch($message, $products)) {
+            $this->applyItemsFromProducts($checkout, $products, $quantity);
+        }
         $this->applyUpdates($checkout, $updates);
 
         if ($this->isCancelRequest($message)) {
@@ -833,5 +835,58 @@ class CheckoutConversationService
         }
 
         return $normalized;
+    }
+
+    /**
+     * @param Collection<int, Product> $products
+     */
+    private function shouldAutoAttachProductFromSearch(string $message, Collection $products): bool
+    {
+        if ($products->isEmpty()) {
+            return false;
+        }
+
+        $text = mb_strtolower(trim($message));
+        if ($text === '') {
+            return false;
+        }
+
+        if (preg_match('/https?:\/\//i', $text) === 1) {
+            return true;
+        }
+
+        if (preg_match('/\b(sku|id)\s*[:#=]?\s*[a-z0-9\-]{2,}\b/iu', $text) === 1) {
+            return true;
+        }
+
+        if ($products->count() > 1) {
+            return false;
+        }
+
+        $checkoutOnly = preg_replace('/[^a-z0-9\s]+/iu', ' ', $text);
+        if (! is_string($checkoutOnly)) {
+            return false;
+        }
+
+        $tokens = preg_split('/\s+/', $checkoutOnly) ?: [];
+        $genericWords = [
+            'mogu', 'li', 'moze', 'mozemo', 'da',
+            'zelim', 'hocu', 'hoću',
+            'kupi', 'kupim', 'kupiti',
+            'naruci', 'naruciti', 'naruči', 'naručiti',
+            'narudzba', 'narudžba', 'narudzbu', 'narudžbu', 'porudzbina', 'porudžbina',
+            'checkout', 'korpa', 'poruciti', 'poručiti',
+        ];
+
+        $semanticTokens = [];
+        foreach ($tokens as $token) {
+            $clean = trim($token);
+            if ($clean === '' || mb_strlen($clean) < 3 || in_array($clean, $genericWords, true)) {
+                continue;
+            }
+            $semanticTokens[] = $clean;
+        }
+
+        return count($semanticTokens) >= 2;
     }
 }

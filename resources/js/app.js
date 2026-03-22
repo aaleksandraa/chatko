@@ -3815,6 +3815,8 @@ function renderAiUsageSummary(meta) {
     const tokensMonthlyValue = Number(usage.tokens_monthly ?? 0);
     const tokensMonthlyLimit = limits.max_tokens_monthly == null ? 'unlimited' : String(limits.max_tokens_monthly);
     const blockOnLimit = limits.block_on_limit === false ? 'off' : 'on';
+    const responseSource = String(usage.last_response_source ?? 'n/a');
+    const responseAt = usage.last_response_at ? formatTimestamp(usage.last_response_at) : '-';
 
     const exceededText = exceeded.length === 0
         ? 'none'
@@ -3822,7 +3824,7 @@ function renderAiUsageSummary(meta) {
             .map((entry) => String(entry.label ?? entry.type ?? 'limit'))
             .join(', ');
 
-    elements.aiUsageSummary.textContent = `Usage: messages(month) ${messagesValue}/${messagesLimit} | tokens(day) ${tokensDailyValue}/${tokensDailyLimit} | tokens(month) ${tokensMonthlyValue}/${tokensMonthlyLimit} | block=${blockOnLimit} | exceeded=${exceededText}`;
+    elements.aiUsageSummary.textContent = `Usage: messages(month) ${messagesValue}/${messagesLimit} | tokens(day) ${tokensDailyValue}/${tokensDailyLimit} | tokens(month) ${tokensMonthlyValue}/${tokensMonthlyLimit} | source=${responseSource} @ ${responseAt} | block=${blockOnLimit} | exceeded=${exceededText}`;
 }
 
 function renderMessages(messages) {
