@@ -412,6 +412,7 @@ const elements = {
     productsPageInfo: document.getElementById('products-page-info'),
     productsPerPage: document.getElementById('products-per-page'),
     productsTotalInfo: document.getElementById('products-total-info'),
+    productsDeleteAll: document.getElementById('products-delete-all'),
 
     knowledgeLoad: document.getElementById('knowledge-load'),
     knowledgeTextForm: document.getElementById('knowledge-text-form'),
@@ -2025,6 +2026,22 @@ function bindProducts() {
         event.preventDefault();
         state.productsPage = 1;
         await withGuard(loadProducts);
+    });
+
+    elements.productsDeleteAll?.addEventListener('click', async () => {
+        await withGuard(async () => {
+            if (!canBulkDeleteProducts()) {
+                throw new Error('Samo owner moze obrisati sve proizvode.');
+            }
+
+            openConfirmModal('Obrisati sve proizvode iz ovog tenanta?', async () => {
+                const response = await request('/api/admin/products', { method: 'DELETE' });
+                const deletedCount = intOrUndefined(response?.data?.deleted_count) ?? 0;
+                state.productsPage = 1;
+                await loadProducts();
+                showAlert(`Obrisano proizvoda: ${deletedCount}.`, 'ok');
+            });
+        });
     });
 
     elements.productsPerPage?.addEventListener('change', async () => {
@@ -3883,6 +3900,7 @@ function clearSession() {
 function renderSessionStatus() {
     updateAuthSurfaceVisibility();
     updateSystemAdminUserControlsVisibility();
+    updateProductsDangerControlsVisibility();
 
     if (!state.token || !state.tenantSlug) {
         elements.sessionStatus.textContent = 'Niste prijavljeni.';
@@ -4094,6 +4112,19 @@ function canReadOrderStatusEvents() {
 
 function canReadAiConfig() {
     return hasRoleAtLeast('admin');
+}
+
+function canBulkDeleteProducts() {
+    return hasRoleAtLeast('owner');
+}
+
+function updateProductsDangerControlsVisibility() {
+    if (!elements.productsDeleteAll) {
+        return;
+    }
+
+    const visible = Boolean(state.token && state.tenantSlug) && canBulkDeleteProducts();
+    elements.productsDeleteAll.classList.toggle('hidden', !visible);
 }
 
 function canAccessView(view) {

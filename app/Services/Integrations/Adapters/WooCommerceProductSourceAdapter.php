@@ -300,7 +300,7 @@ class WooCommerceProductSourceAdapter implements ProductSourceAdapterInterface, 
 
     private function productStatusParam(IntegrationConnection $connection): ?string
     {
-        $raw = data_get($connection->config_json, 'products_status', 'any');
+        $raw = data_get($connection->config_json, 'products_status', 'publish');
 
         $statuses = [];
         if (is_string($raw)) {
@@ -314,16 +314,16 @@ class WooCommerceProductSourceAdapter implements ProductSourceAdapterInterface, 
 
         $statuses = array_values(array_unique(array_filter($statuses)));
         if ($statuses === [] || in_array('any', $statuses, true)) {
-            return null;
+            return 'publish';
         }
 
-        $allowed = ['publish', 'draft', 'pending', 'private'];
+        $allowed = ['publish'];
         $statuses = array_values(array_filter(
             $statuses,
             static fn (string $status): bool => in_array($status, $allowed, true),
         ));
 
-        return $statuses === [] ? null : implode(',', $statuses);
+        return $statuses === [] ? 'publish' : implode(',', $statuses);
     }
 
     /**

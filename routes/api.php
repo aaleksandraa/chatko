@@ -87,6 +87,7 @@ Route::prefix('admin')->middleware(['auth.token', 'tenant', 'tenant.role:support
 
     Route::get('/products', [ProductController::class, 'index']);
     Route::post('/products', [ProductController::class, 'store'])->middleware('tenant.role:editor');
+    Route::delete('/products', [ProductController::class, 'destroyAll'])->middleware('tenant.role:owner');
     Route::put('/products/{id}', [ProductController::class, 'update'])->middleware('tenant.role:editor');
     Route::delete('/products/{id}', [ProductController::class, 'destroy'])->middleware('tenant.role:editor');
     Route::post('/products/import/csv', [ProductController::class, 'importCsv'])->middleware('tenant.role:editor');

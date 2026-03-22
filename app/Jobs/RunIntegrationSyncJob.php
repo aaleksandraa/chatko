@@ -73,6 +73,19 @@ class RunIntegrationSyncJob implements ShouldQueue
                     continue;
                 }
 
+                if (! $this->isActiveProductRow($row)) {
+                    $skipped++;
+                    ImportJobRow::query()->create([
+                        'import_job_id' => $importJob->id,
+                        'external_row_ref' => $row['external_id'] ?? ($row['id'] ?? null),
+                        'row_index' => $index + 1,
+                        'raw_payload_json' => $row,
+                        'status' => 'skipped',
+                        'error_message' => 'Product status is not active.',
+                    ]);
+                    continue;
+                }
+
                 $result = $productUpsertService->upsert(
                     $importJob->tenant,
                     $row,
@@ -153,5 +166,20 @@ class RunIntegrationSyncJob implements ShouldQueue
             'status' => 'sync_failed',
             'last_error' => $message,
         ]);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function isActiveProductRow(array $row): bool
+    {
+        $rawStatus = $row['status'] ?? null;
+        if (! is_scalar($rawStatus) || trim((string) $rawStatus) === '') {
+            return true;
+        }
+
+        $status = strtolower(trim((string) $rawStatus));
+
+        return in_array($status, ['active', 'publish', 'published'], true);
     }
 }

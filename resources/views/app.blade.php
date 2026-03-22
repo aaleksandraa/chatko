@@ -556,6 +556,7 @@
                                     <option value="draft">draft</option>
                                 </select>
                                 <button class="btn btn-ghost" type="submit">Load</button>
+                                <button id="products-delete-all" class="btn btn-danger hidden" type="button">Delete All</button>
                             </form>
                         </div>
                         <div class="table-wrap">

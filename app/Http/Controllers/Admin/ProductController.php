@@ -12,6 +12,7 @@ use App\Services\Catalog\ProductUpsertService;
 use App\Support\TenantContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class ProductController extends Controller
@@ -174,6 +175,64 @@ class ProductController extends Controller
 
         return response()->json([
             'message' => 'Product deleted.',
+        ]);
+    }
+
+    public function destroyAll(Request $request, TenantContext $tenantContext, AuditLogService $auditLogService): JsonResponse
+    {
+        $tenant = $this->tenantFromRequest($request, $tenantContext);
+
+        $query = Product::query()->where('tenant_id', $tenant->id);
+        $total = (int) (clone $query)->count();
+
+        if ($total <= 0) {
+            return response()->json([
+                'message' => 'No products to delete.',
+                'data' => [
+                    'deleted_count' => 0,
+                ],
+            ]);
+        }
+
+        $sampleIds = (clone $query)
+            ->latest('id')
+            ->limit(50)
+            ->pluck('id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+
+        $deletedCount = 0;
+
+        DB::transaction(function () use ($tenant, &$deletedCount): void {
+            $deletedCount = Product::query()
+                ->where('tenant_id', $tenant->id)
+                ->delete();
+        });
+
+        $auditLogService->logMutation(
+            $request,
+            'bulk_deleted',
+            'products',
+            [
+                'tenant_id' => (int) $tenant->id,
+                'count' => $total,
+                'sample_ids' => $sampleIds,
+            ],
+            [
+                'tenant_id' => (int) $tenant->id,
+                'deleted_count' => (int) $deletedCount,
+            ],
+            [
+                'scope' => 'tenant_products',
+                'deleted_count' => (int) $deletedCount,
+            ],
+        );
+
+        return response()->json([
+            'message' => 'All products deleted.',
+            'data' => [
+                'deleted_count' => (int) $deletedCount,
+            ],
         ]);
     }
 }

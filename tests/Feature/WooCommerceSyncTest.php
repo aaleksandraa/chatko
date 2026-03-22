@@ -288,6 +288,79 @@ class WooCommerceSyncTest extends TestCase
         ]);
     }
 
+    public function test_sync_imports_only_active_products_and_skips_non_active_rows(): void
+    {
+        $credentials = app('encrypter')->encrypt(json_encode([
+            'consumer_key' => 'ck_test',
+            'consumer_secret' => 'cs_test',
+        ]));
+
+        $connection = IntegrationConnection::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'type' => 'woocommerce',
+            'name' => 'Main Woo',
+            'status' => 'connected',
+            'base_url' => 'https://shop.example.com',
+            'credentials_encrypted' => $credentials,
+        ]);
+
+        Http::fake([
+            'https://shop.example.com/wp-json/wc/v3/products*' => Http::response([
+                [
+                    'id' => 701,
+                    'sku' => 'SERUM-701',
+                    'name' => 'Publish Product',
+                    'regular_price' => '19.90',
+                    'stock_quantity' => 5,
+                    'stock_status' => 'instock',
+                    'categories' => [['name' => 'Skincare']],
+                    'images' => [],
+                    'status' => 'publish',
+                ],
+                [
+                    'id' => 702,
+                    'sku' => 'SERUM-702',
+                    'name' => 'Draft Product',
+                    'regular_price' => '29.90',
+                    'stock_quantity' => 8,
+                    'stock_status' => 'instock',
+                    'categories' => [['name' => 'Skincare']],
+                    'images' => [],
+                    'status' => 'draft',
+                ],
+            ], 200),
+        ]);
+
+        $job = ImportJob::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'integration_connection_id' => $connection->id,
+            'job_type' => 'initial_sync',
+            'source_type' => 'woocommerce',
+            'status' => 'pending',
+        ]);
+
+        app()->call([new RunIntegrationSyncJob($job->id), 'handle']);
+
+        $this->assertDatabaseHas('products', [
+            'tenant_id' => $this->tenant->id,
+            'sku' => 'SERUM-701',
+        ]);
+        $this->assertDatabaseMissing('products', [
+            'tenant_id' => $this->tenant->id,
+            'sku' => 'SERUM-702',
+        ]);
+
+        $job->refresh();
+        $this->assertSame(1, (int) $job->success_records);
+        $this->assertSame(1, (int) $job->skipped_records);
+
+        Http::assertSent(function ($request) {
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return ($query['status'] ?? null) === 'publish';
+        });
+    }
+
     /**
      * @return array<string, string>
      */

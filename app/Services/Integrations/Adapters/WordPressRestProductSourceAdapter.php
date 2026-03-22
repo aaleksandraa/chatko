@@ -23,10 +23,15 @@ class WordPressRestProductSourceAdapter implements ProductSourceAdapterInterface
     public function testConnection(IntegrationConnection $connection): array
     {
         $resourcePath = $this->resourcePath($connection);
+        $statusParam = $this->productStatusParam($connection);
 
         $response = $this->client($connection)->get(
             $this->endpoint($connection, $resourcePath),
-            ['per_page' => 1, '_embed' => 1],
+            [
+                'per_page' => 1,
+                '_embed' => 1,
+                'status' => $statusParam,
+            ],
         );
 
         if ($response->failed()) {
@@ -72,6 +77,7 @@ class WordPressRestProductSourceAdapter implements ProductSourceAdapterInterface
                 '_embed' => 1,
                 'orderby' => 'modified',
                 'order' => 'asc',
+                'status' => $this->productStatusParam($connection),
             ];
 
             $response = $this->client($connection)->get(
@@ -103,6 +109,10 @@ class WordPressRestProductSourceAdapter implements ProductSourceAdapterInterface
                 }
 
                 if ($mode === 'delta' && $since !== null && ! $this->isModifiedAfter($item, $since)) {
+                    continue;
+                }
+
+                if (! $this->isActiveStatus((string) ($item['status'] ?? 'publish'))) {
                     continue;
                 }
 
@@ -306,5 +316,34 @@ class WordPressRestProductSourceAdapter implements ProductSourceAdapterInterface
 
         return str_contains($code, 'invalid_page')
             || str_contains($message, 'invalid page');
+    }
+
+    private function productStatusParam(IntegrationConnection $connection): string
+    {
+        $raw = data_get($connection->config_json, 'products_status', 'publish');
+
+        $statuses = [];
+        if (is_string($raw)) {
+            $statuses = array_map('trim', explode(',', strtolower($raw)));
+        } elseif (is_array($raw)) {
+            $statuses = array_map(
+                static fn ($value): string => strtolower(trim((string) $value)),
+                $raw,
+            );
+        }
+
+        $statuses = array_values(array_unique(array_filter($statuses)));
+        if ($statuses === [] || in_array('any', $statuses, true)) {
+            return 'publish';
+        }
+
+        return in_array('publish', $statuses, true) ? 'publish' : 'publish';
+    }
+
+    private function isActiveStatus(string $status): bool
+    {
+        $normalized = strtolower(trim($status));
+
+        return in_array($normalized, ['publish', 'published', 'active'], true);
     }
 }
