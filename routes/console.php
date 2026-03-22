@@ -3,7 +3,9 @@
 use App\Services\Integrations\ScheduledIntegrationSyncService;
 use App\Services\AI\OpenAIModelCatalogService;
 use App\Models\AiConfig;
+use App\Models\Tenant;
 use Illuminate\Foundation\Inspiring;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
@@ -145,6 +147,123 @@ Artisan::command('ai:normalize-models {--dry-run}', function (OpenAIModelCatalog
         count($catalog->allowedEmbeddingModels()),
     ));
 })->purpose('Normalize AI model names across all tenant AI configs to backend allowlist.');
+
+Artisan::command(
+    'ai:doctor {--tenant=} {--model=} {--embedding=} {--skip-http}',
+    function (OpenAIModelCatalogService $catalog): void {
+        $tenantOption = trim((string) $this->option('tenant'));
+        $chatOverride = trim((string) $this->option('model'));
+        $embeddingOverride = trim((string) $this->option('embedding'));
+        $skipHttp = (bool) $this->option('skip-http');
+
+        $tenant = null;
+        if ($tenantOption !== '') {
+            $tenant = Tenant::query()
+                ->where('slug', $tenantOption)
+                ->orWhere('id', is_numeric($tenantOption) ? (int) $tenantOption : 0)
+                ->first();
+        } else {
+            $tenant = Tenant::query()->orderBy('id')->first();
+        }
+
+        $aiConfig = null;
+        if ($tenant instanceof Tenant) {
+            $aiConfig = AiConfig::query()->where('tenant_id', $tenant->id)->first();
+        }
+
+        $runtimeKey = trim((string) config('services.openai.api_key', ''));
+        $runtimeKeyLoaded = $runtimeKey !== '';
+        $runtimeKeyPrefix = $runtimeKeyLoaded ? substr($runtimeKey, 0, 7).'...' : '(missing)';
+
+        $rawChatModel = $chatOverride !== ''
+            ? $chatOverride
+            : trim((string) ($aiConfig?->model_name ?? config('services.openai.default_model', 'gpt-5-mini')));
+        $rawEmbeddingModel = $embeddingOverride !== ''
+            ? $embeddingOverride
+            : trim((string) ($aiConfig?->embedding_model ?? config('services.openai.embedding_model', 'text-embedding-3-small')));
+
+        $chatModel = $catalog->normalizeChatModel($rawChatModel);
+        $embeddingModel = $catalog->normalizeEmbeddingModel($rawEmbeddingModel);
+
+        $rows = [
+            ['app_env', app()->environment()],
+            ['tenant', $tenant instanceof Tenant ? "{$tenant->id} ({$tenant->slug})" : '(none found)'],
+            ['tenant_ai_model_raw', $rawChatModel !== '' ? $rawChatModel : '(empty)'],
+            ['tenant_embedding_raw', $rawEmbeddingModel !== '' ? $rawEmbeddingModel : '(empty)'],
+            ['resolved_chat_model', $chatModel],
+            ['resolved_embedding_model', $embeddingModel],
+            ['runtime_api_key_loaded', $runtimeKeyLoaded ? 'yes' : 'no'],
+            ['runtime_api_key_prefix', $runtimeKeyPrefix],
+            ['allowed_chat_models_count', (string) count($catalog->allowedChatModels())],
+            ['allowed_embedding_models_count', (string) count($catalog->allowedEmbeddingModels())],
+        ];
+
+        $this->table(['check', 'value'], $rows);
+
+        if ($skipHttp) {
+            $this->warn('HTTP checks skipped (--skip-http).');
+            return;
+        }
+
+        if (! $runtimeKeyLoaded) {
+            $this->error('OPENAI_API_KEY is not loaded in runtime config.');
+            return;
+        }
+
+        $responseStatus = null;
+        $responseBody = null;
+        $embeddingStatus = null;
+        $embeddingBody = null;
+
+        try {
+            $response = Http::withToken($runtimeKey)
+                ->acceptJson()
+                ->timeout(25)
+                ->post('https://api.openai.com/v1/responses', [
+                    'model' => $chatModel,
+                    'input' => 'ping',
+                    'max_output_tokens' => 16,
+                ]);
+
+            $responseStatus = $response->status();
+            $responseBody = substr((string) $response->body(), 0, 300);
+        } catch (\Throwable $exception) {
+            $responseStatus = 0;
+            $responseBody = 'transport/runtime error: '.$exception->getMessage();
+        }
+
+        try {
+            $embeddingResponse = Http::withToken($runtimeKey)
+                ->acceptJson()
+                ->timeout(25)
+                ->post('https://api.openai.com/v1/embeddings', [
+                    'model' => $embeddingModel,
+                    'input' => 'ping',
+                ]);
+
+            $embeddingStatus = $embeddingResponse->status();
+            $embeddingBody = substr((string) $embeddingResponse->body(), 0, 300);
+        } catch (\Throwable $exception) {
+            $embeddingStatus = 0;
+            $embeddingBody = 'transport/runtime error: '.$exception->getMessage();
+        }
+
+        $this->table(
+            ['api_check', 'status', 'snippet'],
+            [
+                ['responses', (string) $responseStatus, (string) $responseBody],
+                ['embeddings', (string) $embeddingStatus, (string) $embeddingBody],
+            ],
+        );
+
+        if ($responseStatus !== 200 || $embeddingStatus !== 200) {
+            $this->error('At least one OpenAI API check failed. Inspect status/snippet above.');
+            return;
+        }
+
+        $this->info('OpenAI runtime checks passed.');
+    },
+)->purpose('Diagnose runtime OpenAI key/model wiring and test responses/embeddings endpoints.');
 
 Schedule::command('integrations:sync-scheduled --limit=200')
     ->everyMinute()
