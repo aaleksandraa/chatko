@@ -721,7 +721,21 @@
                     </section>
                     <section class="card">
                         <h3>Messages</h3>
-                        <ul id="conversation-messages" class="chat-log"></ul>
+                        <div class="table-wrap">
+                            <table class="conversation-messages-table">
+                                <thead>
+                                <tr>
+                                    <th>Role</th>
+                                    <th>Time</th>
+                                    <th>Source</th>
+                                    <th>Tokens In</th>
+                                    <th>Tokens Out</th>
+                                    <th>Message</th>
+                                </tr>
+                                </thead>
+                                <tbody id="conversation-messages"></tbody>
+                            </table>
+                        </div>
                     </section>
                 </div>
             </section>

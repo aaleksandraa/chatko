@@ -470,6 +470,16 @@ th {
     color: var(--brand);
 }
 
+.conversation-messages-table {
+    min-width: 860px;
+}
+
+.conversation-messages-table .message-cell {
+    min-width: 280px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .muted {
     color: var(--text-muted);
 }

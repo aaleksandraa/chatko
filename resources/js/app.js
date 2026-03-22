@@ -3827,16 +3827,78 @@ function renderAiUsageSummary(meta) {
     elements.aiUsageSummary.textContent = `Usage: messages(month) ${messagesValue}/${messagesLimit} | tokens(day) ${tokensDailyValue}/${tokensDailyLimit} | tokens(month) ${tokensMonthlyValue}/${tokensMonthlyLimit} | source=${responseSource} @ ${responseAt} | block=${blockOnLimit} | exceeded=${exceededText}`;
 }
 
+function ensureConversationMessagesTable() {
+    if (!elements.conversationMessages) {
+        return null;
+    }
+
+    if (elements.conversationMessages.tagName === 'TBODY') {
+        return elements.conversationMessages;
+    }
+
+    const legacyNode = elements.conversationMessages;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-wrap';
+
+    const table = document.createElement('table');
+    table.className = 'conversation-messages-table';
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th>Role</th>
+                <th>Time</th>
+                <th>Source</th>
+                <th>Tokens In</th>
+                <th>Tokens Out</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+    `;
+
+    const body = document.createElement('tbody');
+    body.id = 'conversation-messages';
+    table.appendChild(body);
+    wrapper.appendChild(table);
+
+    const parent = legacyNode.parentElement;
+    if (parent) {
+        parent.replaceChild(wrapper, legacyNode);
+        elements.conversationMessages = body;
+        return body;
+    }
+
+    return null;
+}
+
 function renderMessages(messages) {
-    elements.conversationMessages.innerHTML = messages.length === 0
-        ? '<li class="muted">Nema poruka za ovu konverzaciju.</li>'
-        : messages.map((message) => `
-            <li>
-                <strong>${escapeHtml(String(message.role ?? 'unknown'))}</strong>
-                <span class="muted">${escapeHtml(formatTimestamp(message.created_at))}</span>
-                <p>${escapeHtml(String(message.message_text ?? ''))}</p>
-            </li>
-        `).join('');
+    const messageContainer = ensureConversationMessagesTable();
+    if (!messageContainer) {
+        return;
+    }
+
+    messageContainer.innerHTML = messages.length === 0
+        ? '<tr><td colspan="6" class="muted">Nema poruka za ovu konverzaciju.</td></tr>'
+        : messages.map((message) => {
+            const source = String(
+                message.metadata_json?.response_source
+                ?? message.metadata?.response_source
+                ?? message.source
+                ?? '-',
+            );
+            const tokensIn = Number(message.tokens_input ?? message.tokens?.input ?? 0);
+            const tokensOut = Number(message.tokens_output ?? message.tokens?.output ?? 0);
+
+            return `
+                <tr>
+                    <td><strong>${escapeHtml(String(message.role ?? 'unknown'))}</strong></td>
+                    <td>${escapeHtml(formatTimestamp(message.created_at))}</td>
+                    <td>${escapeHtml(source)}</td>
+                    <td>${escapeHtml(String(tokensIn))}</td>
+                    <td>${escapeHtml(String(tokensOut))}</td>
+                    <td class="message-cell">${escapeHtml(String(message.message_text ?? ''))}</td>
+                </tr>
+            `;
+        }).join('');
 }
 
 function renderWidgetMessage(role, text) {
