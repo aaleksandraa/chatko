@@ -82,48 +82,49 @@ class OpenAIResponseService
             'max_output_tokens' => $safeMaxOutputTokens,
         ];
 
-        try {
-            $response = Http::withToken($apiKey)
-                ->acceptJson()
-                ->timeout(45)
-                ->retry(2, 250)
-                ->post('https://api.openai.com/v1/responses', $payload);
-        } catch (\Throwable $exception) {
-            Log::warning('OpenAI response generation failed with transport/runtime error.', [
-                'model' => $safeModel,
-                'error' => $exception->getMessage(),
-            ]);
-
+        $attempt = $this->executeOpenAIRequest($safeModel, $payload, $apiKey);
+        if (! is_array($attempt)) {
             return $this->fallbackResponse($promptPackage);
         }
 
-        if (! $response->successful()) {
-            if (in_array($response->status(), [401, 403, 404], true)) {
-                Log::warning('OpenAI response generation returned non-success status.', [
-                    'model' => $safeModel,
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                ]);
+        $json = is_array($attempt['json'] ?? null) ? $attempt['json'] : [];
+        $outputText = $this->extractOutputText($json);
+
+        if ((! is_string($outputText) || $outputText === '') && $this->shouldRetryWithHigherTokens($json)) {
+            $retryTokens = $this->retryMaxOutputTokens($safeMaxOutputTokens);
+            if ($retryTokens > $safeMaxOutputTokens) {
+                $payload['max_output_tokens'] = $retryTokens;
+                $retryAttempt = $this->executeOpenAIRequest($safeModel, $payload, $apiKey);
+                if (is_array($retryAttempt)) {
+                    $attempt = $retryAttempt;
+                    $json = is_array($attempt['json'] ?? null) ? $attempt['json'] : [];
+                    $outputText = $this->extractOutputText($json);
+                }
             }
-            return $this->fallbackResponse($promptPackage);
         }
-
-        $json = $response->json();
-        $usage = is_array($json['usage'] ?? null) ? $json['usage'] : [];
-        $outputText = data_get($json, 'output.0.content.0.text')
-            ?? data_get($json, 'output_text')
-            ?? null;
 
         if (! is_string($outputText) || $outputText === '') {
+            Log::warning('OpenAI response missing output text; falling back.', [
+                'model' => $safeModel,
+                'status' => (string) ($json['status'] ?? 'unknown'),
+                'incomplete_reason' => data_get($json, 'incomplete_details.reason'),
+            ]);
+
             return $this->fallbackResponse($promptPackage);
         }
 
         $decoded = json_decode($outputText, true);
 
         if (! is_array($decoded)) {
+            Log::warning('OpenAI response returned non-JSON output; falling back.', [
+                'model' => $safeModel,
+                'output_preview' => mb_substr($outputText, 0, 200),
+            ]);
+
             return $this->fallbackResponse($promptPackage);
         }
 
+        $usage = is_array($json['usage'] ?? null) ? $json['usage'] : [];
         $decoded['_usage'] = [
             'input_tokens' => $this->intOrNull($usage['input_tokens'] ?? $usage['prompt_tokens'] ?? null),
             'output_tokens' => $this->intOrNull($usage['output_tokens'] ?? $usage['completion_tokens'] ?? null),
@@ -208,5 +209,79 @@ class OpenAIResponseService
         }
 
         return min(max($requested, $minimum), $ceiling);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>|null
+     */
+    private function executeOpenAIRequest(string $model, array $payload, string $apiKey): ?array
+    {
+        try {
+            $response = Http::withToken($apiKey)
+                ->acceptJson()
+                ->timeout(45)
+                ->retry(2, 250)
+                ->post('https://api.openai.com/v1/responses', $payload);
+        } catch (\Throwable $exception) {
+            Log::warning('OpenAI response generation failed with transport/runtime error.', [
+                'model' => $model,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if (! $response->successful()) {
+            if (in_array($response->status(), [401, 403, 404], true)) {
+                Log::warning('OpenAI response generation returned non-success status.', [
+                    'model' => $model,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+            }
+
+            return null;
+        }
+
+        return [
+            'json' => $response->json(),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $json
+     */
+    private function extractOutputText(array $json): ?string
+    {
+        $text = data_get($json, 'output.0.content.0.text')
+            ?? data_get($json, 'output_text')
+            ?? null;
+
+        return is_string($text) ? $text : null;
+    }
+
+    /**
+     * @param array<string, mixed> $json
+     */
+    private function shouldRetryWithHigherTokens(array $json): bool
+    {
+        $status = (string) ($json['status'] ?? '');
+        $incompleteReason = (string) data_get($json, 'incomplete_details.reason', '');
+
+        if ($status !== 'incomplete') {
+            return false;
+        }
+
+        return in_array($incompleteReason, ['max_output_tokens', 'max_tokens'], true);
+    }
+
+    private function retryMaxOutputTokens(int $current): int
+    {
+        $minimum = 64;
+        $ceiling = max($minimum, (int) config('services.openai.max_output_tokens_ceiling', 1200));
+        $candidate = max($current + 200, $current * 2);
+
+        return min($candidate, $ceiling);
     }
 }
