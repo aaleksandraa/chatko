@@ -3,6 +3,7 @@
 namespace App\Services\AI;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class OpenAIResponseService
 {
@@ -81,13 +82,29 @@ class OpenAIResponseService
             'max_output_tokens' => $safeMaxOutputTokens,
         ];
 
-        $response = Http::withToken($apiKey)
-            ->acceptJson()
-            ->timeout(45)
-            ->retry(2, 250)
-            ->post('https://api.openai.com/v1/responses', $payload);
+        try {
+            $response = Http::withToken($apiKey)
+                ->acceptJson()
+                ->timeout(45)
+                ->retry(2, 250)
+                ->post('https://api.openai.com/v1/responses', $payload);
+        } catch (\Throwable $exception) {
+            Log::warning('OpenAI response generation failed with transport/runtime error.', [
+                'model' => $safeModel,
+                'error' => $exception->getMessage(),
+            ]);
+
+            return $this->fallbackResponse($promptPackage);
+        }
 
         if (! $response->successful()) {
+            if (in_array($response->status(), [401, 403, 404], true)) {
+                Log::warning('OpenAI response generation returned non-success status.', [
+                    'model' => $safeModel,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+            }
             return $this->fallbackResponse($promptPackage);
         }
 

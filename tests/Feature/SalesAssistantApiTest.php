@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Widget;
 use App\Services\Auth\ApiTokenService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -249,6 +250,56 @@ class SalesAssistantApiTest extends TestCase
         ]);
 
         $response->assertOk();
+    }
+
+    public function test_widget_message_does_not_crash_when_embedding_endpoint_is_forbidden(): void
+    {
+        config()->set('services.openai.api_key', 'test_openai_key');
+        config()->set('services.openai.embedding_fallback_models', ['text-embedding-3-small']);
+
+        Http::fake([
+            'https://api.openai.com/v1/embeddings' => Http::response([
+                'error' => [
+                    'message' => 'Project does not have access to model text-embedding-3-small.',
+                    'type' => 'invalid_request_error',
+                ],
+            ], 403),
+            'https://api.openai.com/v1/responses' => Http::response([
+                'output' => [[
+                    'content' => [[
+                        'text' => json_encode([
+                            'answer_text' => 'Predlazem opcije iz kataloga.',
+                            'recommended_product_ids' => [],
+                            'cta_type' => null,
+                            'cta_label' => null,
+                            'needs_handoff' => false,
+                            'lead_capture_suggested' => false,
+                            'detected_intent' => 'product_recommendation',
+                            'confidence' => 0.8,
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    ]],
+                ]],
+                'usage' => [
+                    'input_tokens' => 30,
+                    'output_tokens' => 40,
+                    'total_tokens' => 70,
+                ],
+            ], 200),
+        ]);
+
+        $session = $this->startWidgetSession('visitor-embedding-403');
+
+        $response = $this->postJson('/api/widget/message', [
+            'public_key' => $this->widget->public_key,
+            'message' => 'Treba mi preporuka',
+            'conversation_id' => $session['conversation_id'],
+            'session_id' => $session['session_id'],
+            'visitor_uuid' => $session['visitor_uuid'],
+            'widget_session_token' => $session['widget_session_token'],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.answer_text', 'Predlazem opcije iz kataloga.');
     }
 
     /**

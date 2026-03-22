@@ -48,6 +48,10 @@ return [
         'query_embedding_cache_ttl_seconds' => (int) env('OPENAI_QUERY_EMBED_CACHE_TTL_SECONDS', 86400),
         'query_embedding_cache_max_chars' => (int) env('OPENAI_QUERY_EMBED_CACHE_MAX_CHARS', 280),
         'embedding_model' => env('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small'),
+        'embedding_fallback_models' => array_values(array_filter(array_map(
+            static fn (string $item): string => trim($item),
+            explode(',', (string) env('OPENAI_EMBEDDING_FALLBACK_MODELS', 'text-embedding-3-small,text-embedding-ada-002'))
+        ))),
         'embedding_dimensions' => (int) env('OPENAI_EMBEDDING_DIMENSIONS', 1536),
         'rag' => [
             'knowledge_max_chunks' => (int) env('OPENAI_RAG_KNOWLEDGE_MAX_CHUNKS', 4),

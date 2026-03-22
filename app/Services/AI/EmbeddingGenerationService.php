@@ -4,6 +4,7 @@ namespace App\Services\AI;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class EmbeddingGenerationService
 {
@@ -14,16 +15,6 @@ class EmbeddingGenerationService
     {
         $apiKey = config('services.openai.api_key');
         $text = trim($text);
-        $dimensions = $this->embeddingDimensions($model);
-        $cacheKey = $this->embeddingCacheKey($model, $text, $dimensions);
-
-        if ($cacheKey !== null) {
-            $cached = Cache::get($cacheKey);
-
-            if (is_array($cached) && count($cached) === $dimensions) {
-                return array_map(static fn ($value): float => (float) $value, $cached);
-            }
-        }
 
         if ($text === '') {
             return [];
@@ -33,37 +24,67 @@ class EmbeddingGenerationService
             return [];
         }
 
-        $response = Http::withToken($apiKey)
-            ->acceptJson()
-            ->timeout(30)
-            ->retry(2, 250)
-            ->post('https://api.openai.com/v1/embeddings', [
-                'model' => $model,
-                'input' => $text,
-            ]);
+        foreach ($this->embeddingModelCandidates($model) as $candidateModel) {
+            $dimensions = $this->embeddingDimensions($candidateModel);
+            $cacheKey = $this->embeddingCacheKey($candidateModel, $text, $dimensions);
 
-        if (! $response->successful()) {
-            return [];
+            if ($cacheKey !== null) {
+                $cached = Cache::get($cacheKey);
+
+                if (is_array($cached) && count($cached) === $dimensions) {
+                    return array_map(static fn ($value): float => (float) $value, $cached);
+                }
+            }
+
+            try {
+                $response = Http::withToken($apiKey)
+                    ->acceptJson()
+                    ->timeout(30)
+                    ->retry(2, 250)
+                    ->post('https://api.openai.com/v1/embeddings', [
+                        'model' => $candidateModel,
+                        'input' => $text,
+                    ]);
+            } catch (\Throwable $exception) {
+                Log::warning('Embedding generation failed with transport/runtime error.', [
+                    'model' => $candidateModel,
+                    'error' => $exception->getMessage(),
+                ]);
+                continue;
+            }
+
+            if (! $response->successful()) {
+                if (in_array($response->status(), [401, 403, 404], true)) {
+                    Log::warning('Embedding generation returned non-success status.', [
+                        'model' => $candidateModel,
+                        'status' => $response->status(),
+                        'body' => $response->body(),
+                    ]);
+                }
+                continue;
+            }
+
+            $vector = data_get($response->json(), 'data.0.embedding');
+
+            if (! is_array($vector)) {
+                continue;
+            }
+
+            $normalized = array_map(static fn ($value): float => (float) $value, $vector);
+
+            if (count($normalized) !== $dimensions) {
+                continue;
+            }
+
+            if ($cacheKey !== null) {
+                $ttl = max(60, (int) config('services.openai.query_embedding_cache_ttl_seconds', 86400));
+                Cache::put($cacheKey, $normalized, now()->addSeconds($ttl));
+            }
+
+            return $normalized;
         }
 
-        $vector = data_get($response->json(), 'data.0.embedding');
-
-        if (! is_array($vector)) {
-            return [];
-        }
-
-        $normalized = array_map(static fn ($value): float => (float) $value, $vector);
-
-        if (count($normalized) !== $dimensions) {
-            return [];
-        }
-
-        if ($cacheKey !== null) {
-            $ttl = max(60, (int) config('services.openai.query_embedding_cache_ttl_seconds', 86400));
-            Cache::put($cacheKey, $normalized, now()->addSeconds($ttl));
-        }
-
-        return $normalized;
+        return [];
     }
 
     private function embeddingDimensions(string $model): int
@@ -104,6 +125,37 @@ class EmbeddingGenerationService
             $dimensions,
             sha1(mb_strtolower($text)),
         );
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function embeddingModelCandidates(string $requestedModel): array
+    {
+        $requestedModel = trim($requestedModel);
+        $configuredModel = trim((string) config('services.openai.embedding_model', 'text-embedding-3-small'));
+        $configuredFallback = config('services.openai.embedding_fallback_models', []);
+        $fallbackModels = is_array($configuredFallback) ? $configuredFallback : [];
+
+        $candidates = array_values(array_filter(array_map(
+            static fn (mixed $item): string => trim((string) $item),
+            array_merge([$requestedModel, $configuredModel], $fallbackModels),
+        )));
+
+        if ($candidates === []) {
+            return ['text-embedding-3-small'];
+        }
+
+        $baseDimensions = $this->embeddingDimensions($candidates[0]);
+        $sameDimensions = array_values(array_filter($candidates, function (string $candidate) use ($baseDimensions): bool {
+            return $this->embeddingDimensions($candidate) === $baseDimensions;
+        }));
+
+        if ($sameDimensions !== []) {
+            return array_values(array_unique($sameDimensions));
+        }
+
+        return array_values(array_unique($candidates));
     }
 }
 
