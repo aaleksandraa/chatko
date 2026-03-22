@@ -123,12 +123,11 @@
             <section id="view-onboarding" class="view-panel">
                 <h2>Tenant Onboarding Wizard</h2>
                 <section class="card">
-                    <p class="muted">Koraci: 1) Tenant + Owner, 2) Widget, 3) Integration, 4) AI Config.</p>
+                    <p class="muted">Koraci: 1) Tenant + Owner, 2) Widget, 3) AI Config. Integracije tenant dodaje kasnije iz svog Integrations taba.</p>
                     <div id="onboarding-steps" class="wizard-steps">
                         <button class="wizard-step active" data-step="1" type="button">Step 1</button>
                         <button class="wizard-step" data-step="2" type="button">Step 2</button>
                         <button class="wizard-step" data-step="3" type="button">Step 3</button>
-                        <button class="wizard-step" data-step="4" type="button">Step 4</button>
                     </div>
 
                     <form id="onboarding-form" class="stack">
@@ -152,7 +151,7 @@
                             </label>
                         </div>
 
-                        <div class="wizard-panel" data-step="3">
+                        <div class="wizard-panel hidden" data-step="99" aria-hidden="true">
                             <label><input id="onboarding-integration-enabled" type="checkbox"> Create initial integration (auto when URL/credentials are filled)</label>
                             <label>Integration name <input id="onboarding-integration-name" type="text" value="Primary Source"></label>
                             <label>Integration type
@@ -249,7 +248,7 @@
                                 <button id="onboarding-integration-apply-template" class="btn btn-ghost" type="button">Apply Type Template</button>
                             </div>
                         </div>
-                        <div class="wizard-panel" data-step="4">
+                        <div class="wizard-panel" data-step="3">
                             <label>Provider <input id="onboarding-ai-provider" type="text" value="openai"></label>
                             <label>Model <input id="onboarding-ai-model" type="text" value="gpt-5-mini"></label>
                             <label>Embedding model <input id="onboarding-ai-embedding" type="text" value="text-embedding-3-small"></label>

@@ -1,8 +1,5 @@
 import { expect, test } from '@playwright/test';
-
-function uniqueSuffix() {
-    return `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-}
+import { loginAsDemoAdmin, openAdminView, uniqueSuffix } from './helpers/admin-ui';
 
 test('onboarding wizard and modal CRUD click flows', async ({ page }) => {
     test.setTimeout(120000);
@@ -21,10 +18,8 @@ test('onboarding wizard and modal CRUD click flows', async ({ page }) => {
     const productName = `E2E Product ${suffix}`;
     const productNameUpdated = `${productName} Updated`;
 
-    await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Chatko Control Room' })).toBeVisible();
-
-    await page.click('button[data-view="onboarding"]');
+    await loginAsDemoAdmin(page);
+    await openAdminView(page, 'onboarding');
     await expect(page.getByRole('heading', { name: 'Tenant Onboarding Wizard' })).toBeVisible();
 
     await page.fill('#onboarding-tenant-name', tenantName);
@@ -39,14 +34,6 @@ test('onboarding wizard and modal CRUD click flows', async ({ page }) => {
     await page.fill('#onboarding-widget-domains', '["http://localhost:3000"]');
     await page.fill('#onboarding-widget-theme', '{"primary_color":"#005f73"}');
     await page.click('#onboarding-next');
-    await page.check('#onboarding-integration-enabled');
-    await page.fill('#onboarding-integration-name', integrationName);
-    await page.selectOption('#onboarding-integration-type', 'custom_api');
-    await page.fill('#onboarding-integration-base-url', 'https://api.example.com');
-    await page.selectOption('#onboarding-custom-auth-mode', 'bearer');
-    await page.fill('#onboarding-custom-token', 'demo_key');
-    await page.fill('#onboarding-custom-products-endpoint', '/products');
-    await page.click('#onboarding-next');
     await page.fill('#onboarding-ai-provider', 'openai');
     await page.fill('#onboarding-ai-model', 'gpt-5-mini');
     await page.fill('#onboarding-ai-embedding', 'text-embedding-3-small');
@@ -54,10 +41,13 @@ test('onboarding wizard and modal CRUD click flows', async ({ page }) => {
     await page.fill('#onboarding-ai-max-tokens', '700');
     await page.click('#onboarding-submit');
 
-    await expect(page.locator('#global-alert')).toContainText('Onboarding zavrsen', { timeout: 30000 });
-    await expect(page.locator('#session-status')).toContainText(`tenant: ${tenantSlug}`);
+    await expect(page.locator('#global-alert')).toContainText('Tenant kreiran', { timeout: 30000 });
+    await expect(page.locator('#session-status')).toContainText('tenant: demo-shop');
 
     await page.click('button[data-view="integrations"]');
+    await page.fill('#integration-name', integrationName);
+    await page.selectOption('#integration-type', 'manual');
+    await page.click('#integration-create-form button[type="submit"]');
     await page.click('#integrations-load');
 
     const integrationRow = page.locator('#integrations-table-body tr').filter({ hasText: integrationName }).first();
@@ -87,6 +77,9 @@ test('onboarding wizard and modal CRUD click flows', async ({ page }) => {
     await expect(page.locator('#products-table-body')).toContainText(productNameUpdated);
 
     await page.click('button[data-view="widgets"]');
+    await page.fill('#widget-create-name', widgetName);
+    await page.fill('#widget-create-locale', 'bs');
+    await page.click('#widget-create-form button[type="submit"]');
     await page.click('#widgets-load');
 
     const widgetRow = page.locator('#widgets-table-body tr').filter({ hasText: widgetName }).first();

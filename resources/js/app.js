@@ -1,6 +1,7 @@
 import './bootstrap';
 
 const SESSION_KEY = 'chatko_admin_session_v1';
+const ONBOARDING_MAX_STEP = 3;
 
 const state = {
     token: null,
@@ -623,7 +624,6 @@ function bindOnboarding() {
                     allowed_domains_json: parseJsonField(elements.onboardingWidgetDomains.value, 'Widget domains'),
                     theme_json: parseJsonField(elements.onboardingWidgetTheme.value, 'Widget theme'),
                 }),
-                integration: compactPayload(buildOnboardingIntegrationPayload()),
                 ai_config: compactPayload({
                     provider: emptyToUndefined(elements.onboardingAiProvider.value),
                     model_name: emptyToUndefined(elements.onboardingAiModel.value),
@@ -636,26 +636,29 @@ function bindOnboarding() {
             const response = await request('/api/onboarding/bootstrap', {
                 method: 'POST',
                 body: payload,
-                auth: false,
             });
 
             const data = response.data ?? {};
-            state.token = data.token ?? null;
-            state.tenantSlug = data.tenant?.slug ?? null;
-            state.user = data.user ?? null;
-            state.role = data.role ?? 'owner';
-            persistSession();
-            renderSessionStatus();
+            const createdTenantName = String(data.tenant?.name ?? payload.tenant_name ?? 'tenant');
+            const createdTenantSlug = String(data.tenant?.slug ?? payload.tenant_slug ?? '');
 
-            elements.loginEmail.value = data.user?.email ?? elements.loginEmail.value;
+            elements.onboardingForm.reset();
+            if (elements.onboardingWidgetName) elements.onboardingWidgetName.value = 'Main Widget';
+            if (elements.onboardingWidgetLocale) elements.onboardingWidgetLocale.value = 'bs';
+            if (elements.onboardingIntegrationName) elements.onboardingIntegrationName.value = 'Primary Source';
+            if (elements.onboardingAiProvider) elements.onboardingAiProvider.value = 'openai';
+            if (elements.onboardingAiModel) elements.onboardingAiModel.value = 'gpt-5-mini';
+            if (elements.onboardingAiEmbedding) elements.onboardingAiEmbedding.value = 'text-embedding-3-small';
+            if (elements.onboardingAiTemperature) elements.onboardingAiTemperature.value = '0.3';
+            if (elements.onboardingAiMaxTokens) elements.onboardingAiMaxTokens.value = '350';
+            setOnboardingStep(1);
 
-            if (data.widget?.public_key) {
-                elements.widgetPublicKey.value = data.widget.public_key;
-            }
-
-            showAlert('Onboarding zavrsen. Tenant je kreiran i ulogovani ste kao owner.', 'ok');
+            const tenantLabel = createdTenantSlug !== ''
+                ? `${createdTenantName} (${createdTenantSlug})`
+                : createdTenantName;
+            showAlert(`Tenant kreiran: ${tenantLabel}. Integracije tenant podesava kasnije nakon login-a.`, 'ok');
             await bootstrapAuthenticatedState();
-            activateView('dashboard');
+            activateView('tenants');
         } catch (error) {
             showAlert(error.message, 'error');
         }
@@ -708,7 +711,7 @@ function bindOnboardingIntegrationAutoEnable() {
 }
 
 function setOnboardingStep(step) {
-    const normalized = Math.max(1, Math.min(4, step));
+    const normalized = Math.max(1, Math.min(ONBOARDING_MAX_STEP, step));
     state.onboardingStep = normalized;
 
     elements.onboardingSteps.forEach((button) => {
@@ -722,10 +725,10 @@ function setOnboardingStep(step) {
         elements.onboardingPrev.disabled = normalized === 1;
     }
     if (elements.onboardingNext) {
-        elements.onboardingNext.disabled = normalized === 4;
+        elements.onboardingNext.disabled = normalized === ONBOARDING_MAX_STEP;
     }
     if (elements.onboardingSubmit) {
-        elements.onboardingSubmit.classList.toggle('hidden', normalized !== 4);
+        elements.onboardingSubmit.classList.toggle('hidden', normalized !== ONBOARDING_MAX_STEP);
     }
 }
 
