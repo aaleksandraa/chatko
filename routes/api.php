@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\SourceMappingPresetController;
 use App\Http\Controllers\Admin\TenantAdminController;
 use App\Http\Controllers\Admin\TenantUserController;
+use App\Http\Controllers\Admin\WidgetLabController;
 use App\Http\Controllers\Admin\WidgetAdminController;
 use App\Http\Controllers\Admin\WidgetAbuseLogController;
 use App\Http\Controllers\Onboarding\OnboardingController;
@@ -112,4 +113,6 @@ Route::prefix('admin')->middleware(['auth.token', 'tenant', 'tenant.role:support
     Route::delete('/conversations/{id}', [ConversationAdminController::class, 'destroy'])->middleware('tenant.role:admin');
 
     Route::get('/analytics/overview', [AnalyticsController::class, 'overview']);
+    Route::post('/widget-lab/session/start', [WidgetLabController::class, 'start']);
+    Route::post('/widget-lab/message', [WidgetLabController::class, 'message']);
 });

@@ -2588,9 +2588,8 @@ function bindWidgetLab() {
                 source_url: emptyToUndefined(elements.widgetSourceUrl.value),
             });
 
-            const response = await request('/api/widget/session/start', {
+            const response = await request('/api/admin/widget-lab/session/start', {
                 method: 'POST',
-                auth: false,
                 body: payload,
             });
 
@@ -2630,9 +2629,8 @@ function bindWidgetLab() {
 
             renderWidgetMessage('user', message);
 
-            const response = await request('/api/widget/message', {
+            const response = await request('/api/admin/widget-lab/message', {
                 method: 'POST',
-                auth: false,
                 body: payload,
             });
 

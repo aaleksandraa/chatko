@@ -903,6 +903,7 @@
 
             <section id="view-widget" class="view-panel">
                 <h2>Widget Lab</h2>
+                <p class="muted">Widget Lab koristi admin test endpointe (tenant scoped), pa radi i kada produkcijski Allowed Domains ne ukljucuje admin domen.</p>
                 <div class="split-grid">
                     <section class="card">
                         <form id="widget-session-form" class="stack">
