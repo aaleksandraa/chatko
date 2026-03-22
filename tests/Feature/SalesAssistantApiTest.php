@@ -198,6 +198,59 @@ class SalesAssistantApiTest extends TestCase
         $this->assertStringContainsString('ne vidim proizvod tog tipa', $answer);
     }
 
+    public function test_widget_session_start_normalizes_non_uuid_visitor_identifier(): void
+    {
+        $session = $this->postJson('/api/widget/session/start', [
+            'public_key' => $this->widget->public_key,
+            'visitor_uuid' => 'v_zvgsgswx4n',
+            'source_url' => 'https://tests.local/product-page',
+        ]);
+
+        $session->assertCreated();
+
+        $normalizedVisitorUuid = (string) $session->json('data.visitor_uuid');
+        $this->assertMatchesRegularExpression(
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i',
+            $normalizedVisitorUuid,
+        );
+
+        $response = $this->postJson('/api/widget/message', [
+            'public_key' => $this->widget->public_key,
+            'message' => 'Treba mi nesto za suhu kozu do 40 KM',
+            'conversation_id' => (int) $session->json('data.conversation_id'),
+            'session_id' => (string) $session->json('data.session_id'),
+            'visitor_uuid' => $normalizedVisitorUuid,
+            'widget_session_token' => (string) $session->json('data.widget_session_token'),
+        ]);
+
+        $response->assertOk();
+    }
+
+    public function test_widget_message_accepts_legacy_non_uuid_visitor_identifier_with_valid_session_token(): void
+    {
+        $legacyVisitorId = 'v_legacy_client_123';
+
+        $session = $this->postJson('/api/widget/session/start', [
+            'public_key' => $this->widget->public_key,
+            'visitor_uuid' => $legacyVisitorId,
+            'source_url' => 'https://tests.local/product-page',
+        ]);
+
+        $session->assertCreated();
+
+        $response = $this->postJson('/api/widget/message', [
+            'public_key' => $this->widget->public_key,
+            'message' => 'Trebam nesto za suhu kozu',
+            'conversation_id' => (int) $session->json('data.conversation_id'),
+            'session_id' => (string) $session->json('data.session_id'),
+            // Legacy widget clients can still send old non-UUID visitor IDs.
+            'visitor_uuid' => $legacyVisitorId,
+            'widget_session_token' => (string) $session->json('data.widget_session_token'),
+        ]);
+
+        $response->assertOk();
+    }
+
     /**
      * @return array<string, string>
      */

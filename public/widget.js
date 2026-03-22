@@ -15,11 +15,15 @@
     apiBase = window.location.origin;
   }
 
+  var VISITOR_UUID_STORAGE_KEY = 'wizsales_visitor_uuid';
+  var storedVisitorUuid = localStorage.getItem(VISITOR_UUID_STORAGE_KEY);
+  var initialVisitorUuid = isUuid(storedVisitorUuid) ? storedVisitorUuid : createId();
+
   var state = {
     conversationId: null,
     sessionId: null,
     sessionToken: null,
-    visitorUuid: localStorage.getItem('wizsales_visitor_uuid') || createId(),
+    visitorUuid: initialVisitorUuid,
     config: null,
     checkout: null,
     challenge: {
@@ -34,10 +38,25 @@
     },
   };
 
-  localStorage.setItem('wizsales_visitor_uuid', state.visitorUuid);
+  localStorage.setItem(VISITOR_UUID_STORAGE_KEY, state.visitorUuid);
 
   function createId() {
-    return 'v_' + Math.random().toString(36).slice(2, 12);
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+
+    // RFC4122-ish v4 fallback for older browsers.
+    var template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx';
+    return template.replace(/[xy]/g, function (char) {
+      var random = Math.floor(Math.random() * 16);
+      var value = char === 'x' ? random : ((random & 0x3) | 0x8);
+      return value.toString(16);
+    });
+  }
+
+  function isUuid(value) {
+    var text = String(value || '').trim();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text);
   }
 
   function endpoint(path) {
@@ -572,6 +591,10 @@
       state.conversationId = data.data.conversation_id;
       state.sessionId = data.data.session_id;
       state.sessionToken = data.data.widget_session_token || state.sessionToken;
+      state.visitorUuid = data.data.visitor_uuid || state.visitorUuid;
+      if (isUuid(state.visitorUuid)) {
+        localStorage.setItem(VISITOR_UUID_STORAGE_KEY, state.visitorUuid);
+      }
     }
 
     async function sendMessage() {

@@ -43,7 +43,7 @@ class WidgetSessionController extends Controller
         $conversation = Conversation::query()->create([
             'tenant_id' => $widget->tenant_id,
             'widget_id' => $widget->id,
-            'visitor_uuid' => $payload['visitor_uuid'] ?? (string) Str::uuid(),
+            'visitor_uuid' => $this->normalizedVisitorUuid($payload['visitor_uuid'] ?? null),
             'session_id' => $payload['session_id'] ?? (string) Str::uuid(),
             'channel' => 'web_widget',
             'locale' => $payload['locale'] ?? $widget->default_locale,
@@ -67,5 +67,15 @@ class WidgetSessionController extends Controller
                 'widget_session_token' => $sessionToken,
             ],
         ], 201);
+    }
+
+    private function normalizedVisitorUuid(mixed $raw): string
+    {
+        $candidate = trim((string) ($raw ?? ''));
+        if (Str::isUuid($candidate)) {
+            return strtolower($candidate);
+        }
+
+        return (string) Str::uuid();
     }
 }

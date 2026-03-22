@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\Widget;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 class WidgetSecurityService
 {
@@ -157,7 +158,7 @@ class WidgetSecurityService
         }
 
         $providedVisitorUuid = trim((string) ($payload['visitor_uuid'] ?? ''));
-        if ($providedVisitorUuid !== '' && $providedVisitorUuid !== (string) ($claims['vid'] ?? '')) {
+        if ($providedVisitorUuid !== '' && Str::isUuid($providedVisitorUuid) && $providedVisitorUuid !== (string) ($claims['vid'] ?? '')) {
             return [
                 'ok' => false,
                 'reason' => 'widget_session_visitor_mismatch',
@@ -188,7 +189,7 @@ class WidgetSecurityService
         }
 
         $visitorUuid = trim((string) $request->input('visitor_uuid', ''));
-        if ($visitorUuid === '' && isset($claims['vid'])) {
+        if (($visitorUuid === '' || ! Str::isUuid($visitorUuid)) && isset($claims['vid'])) {
             $merge['visitor_uuid'] = (string) $claims['vid'];
         }
 
@@ -397,4 +398,3 @@ class WidgetSecurityService
         return null;
     }
 }
-

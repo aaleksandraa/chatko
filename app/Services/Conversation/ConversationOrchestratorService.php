@@ -293,7 +293,7 @@ class ConversationOrchestratorService
         return Conversation::query()->create([
             'tenant_id' => $tenant->id,
             'widget_id' => $widget->id,
-            'visitor_uuid' => $payload['visitor_uuid'] ?? (string) Str::uuid(),
+            'visitor_uuid' => $this->normalizedVisitorUuid($payload['visitor_uuid'] ?? null),
             'session_id' => $payload['session_id'] ?? (string) Str::uuid(),
             'channel' => $payload['channel'] ?? 'web_widget',
             'locale' => $payload['locale'] ?? $widget->default_locale,
@@ -442,5 +442,15 @@ class ConversationOrchestratorService
         $default = max(64, (int) config('services.openai.default_max_output_tokens', 350));
 
         return (int) ($config?->max_output_tokens ?? $default);
+    }
+
+    private function normalizedVisitorUuid(mixed $raw): string
+    {
+        $candidate = trim((string) ($raw ?? ''));
+        if (Str::isUuid($candidate)) {
+            return strtolower($candidate);
+        }
+
+        return (string) Str::uuid();
     }
 }

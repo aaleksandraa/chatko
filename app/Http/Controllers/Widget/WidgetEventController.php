@@ -9,6 +9,7 @@ use App\Services\Conversation\AnalyticsService;
 use App\Services\Widget\WidgetService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class WidgetEventController extends Controller
 {
@@ -55,12 +56,26 @@ class WidgetEventController extends Controller
 
         $event = \App\Models\AnalyticsEvent::query()->create([
             'tenant_id' => $widget->tenant_id,
-            'visitor_uuid' => $payload['visitor_uuid'] ?? null,
+            'visitor_uuid' => $this->normalizedNullableVisitorUuid($payload['visitor_uuid'] ?? null),
             'event_name' => $payload['event_name'],
             'event_value' => isset($payload['event_value']) ? (float) $payload['event_value'] : null,
             'metadata_json' => $payload['metadata_json'] ?? null,
         ]);
 
         return response()->json(['data' => $event], 201);
+    }
+
+    private function normalizedNullableVisitorUuid(mixed $raw): ?string
+    {
+        $candidate = trim((string) ($raw ?? ''));
+        if ($candidate === '') {
+            return null;
+        }
+
+        if (Str::isUuid($candidate)) {
+            return strtolower($candidate);
+        }
+
+        return null;
     }
 }
