@@ -164,6 +164,53 @@
       messages.scrollTop = messages.scrollHeight;
     }
 
+    function friendlyErrorMessage(rawMessage, fallback) {
+      var message = String(rawMessage || '').trim();
+      if (!message) {
+        return fallback || 'Doslo je do greske pri komunikaciji.';
+      }
+
+      if (message.indexOf('Widget origin is not allowed') !== -1) {
+        return 'Widget nije dozvoljen na ovoj domeni. Dodajte trenutni domen u Allowed Domains (npr. http://localhost:5173) ili testirajte na dozvoljenoj domeni.';
+      }
+      if (message.indexOf('Invalid widget key') !== -1 || message.indexOf('Widget not found') !== -1) {
+        return 'Neispravan widget public key. Provjerite data-key u skripti.';
+      }
+      if (message.indexOf('Invalid widget session token') !== -1) {
+        return 'Chat sesija je istekla ili nije validna. Osvjezite stranicu i pokusajte ponovo.';
+      }
+      if (message.indexOf('Challenge verification failed') !== -1 || message.indexOf('missing_challenge_token') !== -1) {
+        return 'Anti-bot provjera nije prosla. Provjerite Turnstile/hCaptcha podesavanja.';
+      }
+      if (message.indexOf('Too Many Requests') !== -1) {
+        return 'Previse zahtjeva u kratkom periodu. Pokusajte ponovo za nekoliko sekundi.';
+      }
+
+      return message;
+    }
+
+    async function extractApiErrorMessage(response, fallback) {
+      try {
+        var payload = await response.json();
+        if (payload && typeof payload.message === 'string' && payload.message.trim()) {
+          return friendlyErrorMessage(payload.message, fallback);
+        }
+        var nested = payload && payload.error && payload.error.message ? String(payload.error.message) : '';
+        if (nested.trim()) {
+          return friendlyErrorMessage(nested, fallback);
+        }
+      } catch (error) {
+        // Non-JSON response body. Fallback to status text below.
+      }
+
+      var statusText = String(response.statusText || '').trim();
+      if (statusText) {
+        return friendlyErrorMessage(statusText, fallback);
+      }
+
+      return fallback || 'Doslo je do greske pri komunikaciji.';
+    }
+
     function paymentOptions(methods) {
       var list = methods && methods.length ? methods : ['cod', 'online'];
       return list
@@ -253,12 +300,12 @@
 
             var saveResponse = await fetch(endpoint('/api/widget/checkout'), {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
               body: JSON.stringify(payload),
             });
 
             if (!saveResponse.ok) {
-              addMessage('Nisam uspio sacuvati checkout podatke.', 'ai');
+              addMessage(await extractApiErrorMessage(saveResponse, 'Nisam uspio sacuvati checkout podatke.'), 'ai');
               return;
             }
 
@@ -281,7 +328,7 @@
 
             var response = await fetch(endpoint('/api/widget/checkout/confirm'), {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
               body: JSON.stringify({
                 public_key: publicKey,
                 conversation_id: state.conversationId,
@@ -290,7 +337,7 @@
             });
 
             if (!response.ok) {
-              addMessage('Potvrda narudzbe nije uspjela. Provjeri podatke i pokusaj opet.', 'ai');
+              addMessage(await extractApiErrorMessage(response, 'Potvrda narudzbe nije uspjela. Provjeri podatke i pokusaj opet.'), 'ai');
               return;
             }
 
@@ -513,12 +560,12 @@
 
       var res = await fetch(endpoint('/api/widget/session/start'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify(startPayload),
       });
 
       if (!res.ok) {
-        throw new Error('Session start failed');
+        throw new Error(await extractApiErrorMessage(res, 'Pokretanje chat sesije nije uspjelo.'));
       }
 
       var data = await res.json();
@@ -542,7 +589,7 @@
 
         var res = await fetch(endpoint('/api/widget/message'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify({
             public_key: publicKey,
             conversation_id: state.conversationId,
@@ -558,7 +605,7 @@
         typing.remove();
 
         if (!res.ok) {
-          addMessage('Trenutno ne mogu odgovoriti. Pokusaj ponovo.', 'ai');
+          addMessage(await extractApiErrorMessage(res, 'Trenutno ne mogu odgovoriti. Pokusaj ponovo.'), 'ai');
           return;
         }
 
@@ -577,7 +624,7 @@
         renderCheckoutPanel(data.data.checkout || null);
       } catch (err) {
         typing.remove();
-        addMessage('Doslo je do greske pri komunikaciji.', 'ai');
+        addMessage(friendlyErrorMessage(err && err.message ? err.message : '', 'Doslo je do greske pri komunikaciji.'), 'ai');
       }
     }
 
