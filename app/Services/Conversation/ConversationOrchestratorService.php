@@ -8,6 +8,7 @@ use App\Models\ConversationMessage;
 use App\Models\Tenant;
 use App\Models\Widget;
 use App\Services\AI\EmbeddingGenerationService;
+use App\Services\AI\OpenAIModelCatalogService;
 use App\Services\AI\OpenAIResponseService;
 use App\Services\AI\PromptBuilderService;
 use App\Services\AI\ResponseValidationService;
@@ -28,6 +29,7 @@ class ConversationOrchestratorService
         private readonly PromptBuilderService $promptBuilderService,
         private readonly OpenAIResponseService $openAIResponseService,
         private readonly ResponseValidationService $responseValidationService,
+        private readonly OpenAIModelCatalogService $openAIModelCatalogService,
         private readonly AnalyticsService $analyticsService,
         private readonly TenantUsageLimitService $tenantUsageLimitService,
         private readonly EmbeddingGenerationService $embeddingGenerationService,
@@ -421,15 +423,17 @@ class ConversationOrchestratorService
     private function resolvedModelName(?AiConfig $config): string
     {
         $modelName = trim((string) ($config?->model_name ?? ''));
+        $candidate = $modelName !== '' ? $modelName : (string) config('services.openai.default_model', 'gpt-5-mini');
 
-        return $modelName !== '' ? $modelName : (string) config('services.openai.default_model', 'gpt-5-mini');
+        return $this->openAIModelCatalogService->normalizeChatModel($candidate);
     }
 
     private function resolvedEmbeddingModel(?AiConfig $config): string
     {
         $embeddingModel = trim((string) ($config?->embedding_model ?? ''));
+        $candidate = $embeddingModel !== '' ? $embeddingModel : (string) config('services.openai.embedding_model', 'text-embedding-3-small');
 
-        return $embeddingModel !== '' ? $embeddingModel : (string) config('services.openai.embedding_model', 'text-embedding-3-small');
+        return $this->openAIModelCatalogService->normalizeEmbeddingModel($candidate);
     }
 
     private function resolvedTemperature(?AiConfig $config): float

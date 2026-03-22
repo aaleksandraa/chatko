@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\ResolvesTenant;
 use App\Http\Controllers\Controller;
 use App\Models\AiConfig;
+use App\Services\AI\OpenAIModelCatalogService;
 use App\Services\Audit\AuditLogService;
 use App\Services\Conversation\TenantUsageLimitService;
 use App\Support\TenantContext;
@@ -15,14 +16,19 @@ class AiConfigController extends Controller
 {
     use ResolvesTenant;
 
-    public function show(Request $request, TenantContext $tenantContext, TenantUsageLimitService $usageLimitService): JsonResponse
+    public function show(
+        Request $request,
+        TenantContext $tenantContext,
+        TenantUsageLimitService $usageLimitService,
+        OpenAIModelCatalogService $openAIModelCatalogService,
+    ): JsonResponse
     {
         $tenant = $this->tenantFromRequest($request, $tenantContext);
 
         $config = AiConfig::query()->firstOrNew(['tenant_id' => $tenant->id], [
             'provider' => 'openai',
-            'model_name' => (string) config('services.openai.default_model', 'gpt-5-mini'),
-            'embedding_model' => 'text-embedding-3-small',
+            'model_name' => $openAIModelCatalogService->defaultChatModel(),
+            'embedding_model' => $openAIModelCatalogService->defaultEmbeddingModel(),
             'temperature' => 0.30,
             'max_output_tokens' => max(64, (int) config('services.openai.default_max_output_tokens', 350)),
             'max_messages_monthly' => null,
@@ -35,11 +41,24 @@ class AiConfigController extends Controller
 
         return response()->json([
             'data' => $config,
-            'meta' => $usageLimitService->snapshot($tenant, $config),
+            'meta' => array_merge(
+                $usageLimitService->snapshot($tenant, $config),
+                [
+                    'allowed_models' => [
+                        'chat' => $openAIModelCatalogService->allowedChatModels(),
+                        'embedding' => $openAIModelCatalogService->allowedEmbeddingModels(),
+                    ],
+                ],
+            ),
         ]);
     }
 
-    public function update(Request $request, TenantContext $tenantContext, AuditLogService $auditLogService): JsonResponse
+    public function update(
+        Request $request,
+        TenantContext $tenantContext,
+        AuditLogService $auditLogService,
+        OpenAIModelCatalogService $openAIModelCatalogService,
+    ): JsonResponse
     {
         $tenant = $this->tenantFromRequest($request, $tenantContext);
 
@@ -59,6 +78,14 @@ class AiConfigController extends Controller
             'system_prompt_template' => ['sometimes', 'nullable', 'string'],
             'sales_rules_json' => ['sometimes', 'nullable', 'array'],
         ]);
+
+        if (array_key_exists('model_name', $payload)) {
+            $payload['model_name'] = $openAIModelCatalogService->normalizeChatModel((string) $payload['model_name']);
+        }
+
+        if (array_key_exists('embedding_model', $payload)) {
+            $payload['embedding_model'] = $openAIModelCatalogService->normalizeEmbeddingModel((string) $payload['embedding_model']);
+        }
 
         $config = AiConfig::query()->firstOrNew(['tenant_id' => $tenant->id]);
         $before = $config->exists ? $config->toArray() : null;

@@ -1,6 +1,8 @@
 <?php
 
 use App\Services\Integrations\ScheduledIntegrationSyncService;
+use App\Services\AI\OpenAIModelCatalogService;
+use App\Models\AiConfig;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -105,6 +107,44 @@ Artisan::command('integrations:freshness-report {--limit=100} {--json}', functio
         $tableRows,
     );
 })->purpose('Report integration freshness and overdue sync cadence.');
+
+Artisan::command('ai:normalize-models {--dry-run}', function (OpenAIModelCatalogService $catalog): void {
+    $dryRun = (bool) $this->option('dry-run');
+    $rows = AiConfig::query()->get();
+
+    $updated = 0;
+
+    foreach ($rows as $row) {
+        $currentChat = trim((string) ($row->model_name ?? ''));
+        $currentEmbedding = trim((string) ($row->embedding_model ?? ''));
+
+        $normalizedChat = $catalog->normalizeChatModel($currentChat);
+        $normalizedEmbedding = $catalog->normalizeEmbeddingModel($currentEmbedding);
+
+        $needsUpdate = $normalizedChat !== $currentChat || $normalizedEmbedding !== $currentEmbedding;
+        if (! $needsUpdate) {
+            continue;
+        }
+
+        $updated++;
+
+        if (! $dryRun) {
+            $row->model_name = $normalizedChat;
+            $row->embedding_model = $normalizedEmbedding;
+            $row->save();
+        }
+    }
+
+    $mode = $dryRun ? 'DRY RUN' : 'EXECUTE';
+    $this->info(sprintf(
+        '[%s] checked=%d updated=%d chat_allowed=%d embedding_allowed=%d',
+        $mode,
+        $rows->count(),
+        $updated,
+        count($catalog->allowedChatModels()),
+        count($catalog->allowedEmbeddingModels()),
+    ));
+})->purpose('Normalize AI model names across all tenant AI configs to backend allowlist.');
 
 Schedule::command('integrations:sync-scheduled --limit=200')
     ->everyMinute()

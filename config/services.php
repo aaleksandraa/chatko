@@ -38,6 +38,13 @@ return [
     'openai' => [
         'api_key' => env('OPENAI_API_KEY'),
         'default_model' => env('OPENAI_MODEL', 'gpt-5-mini'),
+        'allowed_chat_models' => array_values(array_filter(array_map(
+            static fn (string $item): string => trim($item),
+            explode(',', (string) env(
+                'OPENAI_ALLOWED_CHAT_MODELS',
+                'gpt-5-mini,gpt-5-mini-2025-08-07,gpt-5.4-mini,gpt-5.4-mini-2026-03-17,gpt-4o-mini,gpt-4o-mini-tts,gpt-4o-mini-tts-2025-03-20',
+            ))
+        ))),
         'default_max_output_tokens' => (int) env('OPENAI_DEFAULT_MAX_OUTPUT_TOKENS', 350),
         'max_output_tokens_ceiling' => (int) env('OPENAI_MAX_OUTPUT_TOKENS_CEILING', 1200),
         'response_max_chars' => (int) env('OPENAI_RESPONSE_MAX_CHARS', 520),
@@ -48,6 +55,10 @@ return [
         'query_embedding_cache_ttl_seconds' => (int) env('OPENAI_QUERY_EMBED_CACHE_TTL_SECONDS', 86400),
         'query_embedding_cache_max_chars' => (int) env('OPENAI_QUERY_EMBED_CACHE_MAX_CHARS', 280),
         'embedding_model' => env('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small'),
+        'allowed_embedding_models' => array_values(array_filter(array_map(
+            static fn (string $item): string => trim($item),
+            explode(',', (string) env('OPENAI_ALLOWED_EMBEDDING_MODELS', 'text-embedding-3-small,text-embedding-ada-002'))
+        ))),
         'embedding_fallback_models' => array_values(array_filter(array_map(
             static fn (string $item): string => trim($item),
             explode(',', (string) env('OPENAI_EMBEDDING_FALLBACK_MODELS', 'text-embedding-3-small,text-embedding-ada-002'))

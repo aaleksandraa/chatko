@@ -22,6 +22,8 @@ class ProductRetrievalService
      */
     public function search(Tenant $tenant, string $queryText, array $entities = [], int $limit = 5, ?array $queryEmbedding = null): Collection
     {
+        $queryProfile = $this->buildQueryProfile($queryText);
+
         $query = Product::query()
             ->where('tenant_id', $tenant->id)
             ->where('status', 'active')
@@ -59,6 +61,7 @@ class ProductRetrievalService
         }
 
         $products = $query->limit(max($limit * 5, 20))->get();
+        $products = $this->applyQueryProfileFilter($products, $queryProfile);
         if ($products->isEmpty()) {
             return collect();
         }
@@ -73,13 +76,13 @@ class ProductRetrievalService
 
         $semanticScores = $this->semanticScores($tenant, $products->pluck('id')->all(), $embedding);
 
-        $scored = $products->map(function (Product $product) use ($entities, $semanticScores, $keywords): array {
+        $scored = $products->map(function (Product $product) use ($entities, $semanticScores, $keywords, $queryProfile): array {
             $semanticScore = $semanticScores[$product->id] ?? 0.0;
             $keywordMatches = $this->keywordMatchCount($product, $keywords);
 
             return [
                 'product' => $product,
-                'score' => $this->scoreProduct($product, $entities, $semanticScore, $keywordMatches),
+                'score' => $this->scoreProduct($product, $entities, $semanticScore, $keywordMatches, $queryProfile),
                 'semantic_score' => $semanticScore,
                 'keyword_matches' => $keywordMatches,
             ];
@@ -180,7 +183,7 @@ SQL;
         return $scores;
     }
 
-    private function scoreProduct(Product $product, array $entities, float $semanticScore, int $keywordMatches): float
+    private function scoreProduct(Product $product, array $entities, float $semanticScore, int $keywordMatches, array $queryProfile = []): float
     {
         $score = 0.0;
 
@@ -200,6 +203,16 @@ SQL;
 
         // Hybrid weighting: lexical/business score + semantic relevance.
         $score += ($semanticScore * 2.25);
+
+        if (($queryProfile['hair_loss'] ?? false) === true) {
+            if ($this->isAccessoryProduct($product)) {
+                $score -= 4.0;
+            }
+
+            if ($this->isHairLossTreatmentProduct($product)) {
+                $score += 2.5;
+            }
+        }
 
         return $score;
     }
@@ -370,5 +383,98 @@ SQL;
             $clean = trim($token, " \t\n\r\0\x0B,.;:!?()[]{}\"'");
             return strlen($clean) > 2 && ! in_array($clean, $stopWords, true);
         })));
+    }
+
+    /**
+     * @return array{hair_loss: bool}
+     */
+    private function buildQueryProfile(string $queryText): array
+    {
+        $text = mb_strtolower($queryText);
+
+        $hasHair = preg_match('/\b(kosa|kose|vlasi|vlasiste|vlasište|skalpa|skalp)\b/u', $text) === 1;
+        $hasHairLossSignal = preg_match('/\b(opadanje|opadanja|opada|ispadanje|ispadanja|alopecij)\b/u', $text) === 1;
+
+        return [
+            'hair_loss' => $hasHair && $hasHairLossSignal,
+        ];
+    }
+
+    /**
+     * @param Collection<int, Product> $products
+     * @param array{hair_loss: bool} $queryProfile
+     * @return Collection<int, Product>
+     */
+    private function applyQueryProfileFilter(Collection $products, array $queryProfile): Collection
+    {
+        if (($queryProfile['hair_loss'] ?? false) !== true) {
+            return $products;
+        }
+
+        $nonAccessory = $products->reject(fn (Product $product): bool => $this->isAccessoryProduct($product))->values();
+        $treatments = $nonAccessory->filter(fn (Product $product): bool => $this->isHairLossTreatmentProduct($product))->values();
+
+        if ($treatments->isNotEmpty()) {
+            return $treatments;
+        }
+
+        if ($nonAccessory->isNotEmpty()) {
+            return $nonAccessory;
+        }
+
+        // If only accessories were found for a treatment query, force no-match flow.
+        return collect();
+    }
+
+    private function isAccessoryProduct(Product $product): bool
+    {
+        $text = $this->normalizedProductText($product);
+        $signals = [
+            'cetka', 'četka', 'brush',
+            'cesalj', 'češalj', 'comb',
+            'figaro', 'presa', 'fen',
+            'traka', 'gumica', 'rajf',
+            'ukosnica', 'ukosnice', 'spanga', 'španga',
+            'dodatak za kosu', 'pribor za kosu',
+        ];
+
+        foreach ($signals as $signal) {
+            if (str_contains($text, $signal)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isHairLossTreatmentProduct(Product $product): bool
+    {
+        $text = $this->normalizedProductText($product);
+        $signals = [
+            'opadanje', 'anti hair loss', 'hair loss', 'protiv opadanja',
+            'rast kose', 'growth', 'serum', 'ampula', 'ampule', 'ampul',
+            'sampon', 'šampon', 'losion', 'tonik', 'tretman',
+            'vlasiste', 'vlasište', 'scalp',
+            'kofein', 'caffeine', 'biotin', 'anaphase', 'genesis',
+        ];
+
+        foreach ($signals as $signal) {
+            if (str_contains($text, $signal)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normalizedProductText(Product $product): string
+    {
+        return mb_strtolower(trim(implode(' ', array_filter([
+            (string) $product->name,
+            (string) ($product->short_description ?? ''),
+            (string) ($product->long_description ?? ''),
+            (string) ($product->category_text ?? ''),
+            (string) ($product->brand_text ?? ''),
+        ]))));
     }
 }

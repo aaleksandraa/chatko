@@ -882,8 +882,11 @@
                 <section class="card">
                     <form id="ai-config-form" class="stack">
                         <label>Provider <input id="ai-provider" type="text" value="openai"></label>
-                        <label>Model name <input id="ai-model-name" type="text" value="gpt-5.2"></label>
-                        <label>Embedding model <input id="ai-embedding-model" type="text" value="text-embedding-3-small"></label>
+                        <label>Model name <input id="ai-model-name" type="text" list="ai-model-options" value="gpt-5.2"></label>
+                        <datalist id="ai-model-options"></datalist>
+                        <label>Embedding model <input id="ai-embedding-model" type="text" list="ai-embedding-options" value="text-embedding-3-small"></label>
+                        <datalist id="ai-embedding-options"></datalist>
+                        <p id="ai-model-help" class="muted">Allowed models: loading...</p>
                         <label>Temperature <input id="ai-temperature" type="number" step="0.1" min="0" max="2" value="0.2"></label>
                         <label>Max output tokens <input id="ai-max-tokens" type="number" min="128" max="4000" value="350"></label>
                         <label>Max messages monthly (empty = plan default) <input id="ai-max-messages-monthly" type="number" min="1" placeholder="5000"></label>

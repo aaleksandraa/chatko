@@ -464,7 +464,10 @@ const elements = {
     aiConfigForm: document.getElementById('ai-config-form'),
     aiProvider: document.getElementById('ai-provider'),
     aiModelName: document.getElementById('ai-model-name'),
+    aiModelOptions: document.getElementById('ai-model-options'),
     aiEmbeddingModel: document.getElementById('ai-embedding-model'),
+    aiEmbeddingOptions: document.getElementById('ai-embedding-options'),
+    aiModelHelp: document.getElementById('ai-model-help'),
     aiTemperature: document.getElementById('ai-temperature'),
     aiMaxTokens: document.getElementById('ai-max-tokens'),
     aiMaxMessagesMonthly: document.getElementById('ai-max-messages-monthly'),
@@ -3750,6 +3753,7 @@ async function loadAiConfig() {
     const response = await request('/api/admin/ai-config');
     const config = response.data ?? {};
     const meta = response.meta ?? {};
+    renderAiModelOptions(meta.allowed_models ?? {});
 
     elements.aiProvider.value = String(config.provider ?? 'openai');
     elements.aiModelName.value = String(config.model_name ?? 'gpt-5-mini');
@@ -3774,6 +3778,25 @@ async function loadAiConfig() {
     elements.aiTopP.value = String(config.top_p ?? 1);
     elements.aiSystemPrompt.value = String(config.system_prompt_template ?? '');
     renderAiUsageSummary(meta);
+}
+
+function renderAiModelOptions(allowedModels) {
+    const chatModels = Array.isArray(allowedModels?.chat) ? allowedModels.chat.map((item) => String(item).trim()).filter(Boolean) : [];
+    const embeddingModels = Array.isArray(allowedModels?.embedding) ? allowedModels.embedding.map((item) => String(item).trim()).filter(Boolean) : [];
+
+    if (elements.aiModelOptions) {
+        elements.aiModelOptions.innerHTML = chatModels.map((model) => `<option value="${escapeHtml(model)}"></option>`).join('');
+    }
+
+    if (elements.aiEmbeddingOptions) {
+        elements.aiEmbeddingOptions.innerHTML = embeddingModels.map((model) => `<option value="${escapeHtml(model)}"></option>`).join('');
+    }
+
+    if (elements.aiModelHelp) {
+        const chatLabel = chatModels.length > 0 ? chatModels.join(', ') : 'not configured';
+        const embeddingLabel = embeddingModels.length > 0 ? embeddingModels.join(', ') : 'not configured';
+        elements.aiModelHelp.textContent = `Allowed chat: ${chatLabel} | Allowed embedding: ${embeddingLabel}`;
+    }
 }
 
 function renderAiUsageSummary(meta) {

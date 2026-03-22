@@ -8,6 +8,7 @@ use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Widget;
+use App\Services\AI\OpenAIModelCatalogService;
 use App\Services\Auth\ApiTokenService;
 use App\Services\Integrations\IntegrationConnectionService;
 use App\Support\IntegrationSyncFrequency;
@@ -25,6 +26,7 @@ class OnboardingController extends Controller
         Request $request,
         ApiTokenService $tokenService,
         IntegrationConnectionService $integrationConnectionService,
+        OpenAIModelCatalogService $openAIModelCatalogService,
     ): JsonResponse {
         $actor = $request->user();
         $actorSystemAdminUserId = $actor instanceof User && (bool) $actor->is_system_admin
@@ -93,7 +95,7 @@ class OnboardingController extends Controller
             ]);
         }
 
-        $issued = DB::transaction(function () use ($payload, $tenantSlug, $tokenService, $integrationConnectionService, $actorSystemAdminUserId): array {
+        $issued = DB::transaction(function () use ($payload, $tenantSlug, $tokenService, $integrationConnectionService, $openAIModelCatalogService, $actorSystemAdminUserId): array {
             $planCode = (string) ($payload['plan_code'] ?? 'starter');
             $plan = Plan::query()->firstOrCreate(
                 ['code' => $planCode],
@@ -140,8 +142,8 @@ class OnboardingController extends Controller
             $aiConfig = AiConfig::query()->create([
                 'tenant_id' => $tenant->id,
                 'provider' => $aiPayload['provider'] ?? 'openai',
-                'model_name' => $aiPayload['model_name'] ?? (string) config('services.openai.default_model', 'gpt-5-mini'),
-                'embedding_model' => $aiPayload['embedding_model'] ?? 'text-embedding-3-small',
+                'model_name' => $openAIModelCatalogService->normalizeChatModel($aiPayload['model_name'] ?? null),
+                'embedding_model' => $openAIModelCatalogService->normalizeEmbeddingModel($aiPayload['embedding_model'] ?? null),
                 'temperature' => $aiPayload['temperature'] ?? 0.30,
                 'max_output_tokens' => $aiPayload['max_output_tokens'] ?? max(64, (int) config('services.openai.default_max_output_tokens', 350)),
                 'max_messages_monthly' => $aiPayload['max_messages_monthly'] ?? null,

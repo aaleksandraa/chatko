@@ -302,6 +302,103 @@ class SalesAssistantApiTest extends TestCase
             ->assertJsonPath('data.answer_text', 'Predlazem opcije iz kataloga.');
     }
 
+    public function test_widget_message_hair_loss_prefers_treatment_products_over_accessories_in_fallback_mode(): void
+    {
+        Product::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'source_type' => 'manual',
+            'name' => 'DENMAN Cetka za rascesljavanje',
+            'price' => 39.00,
+            'currency' => 'BAM',
+            'in_stock' => true,
+            'stock_qty' => 10,
+            'status' => 'active',
+            'category_text' => 'cetke za kosu',
+            'short_description' => 'Cetka za rascesljavanje i stilizovanje kose.',
+        ]);
+
+        Product::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'source_type' => 'manual',
+            'name' => 'Anti Hair Loss Sampon',
+            'price' => 28.00,
+            'currency' => 'BAM',
+            'in_stock' => true,
+            'stock_qty' => 12,
+            'status' => 'active',
+            'category_text' => 'sampon protiv opadanja',
+            'short_description' => 'Sampon protiv opadanja i za jacanje korijena kose.',
+        ]);
+
+        $session = $this->startWidgetSession('visitor-hair-loss-1');
+
+        $response = $this->postJson('/api/widget/message', [
+            'public_key' => $this->widget->public_key,
+            'message' => 'Treba mi nesto protiv opadanja kose',
+            'conversation_id' => $session['conversation_id'],
+            'session_id' => $session['session_id'],
+            'visitor_uuid' => $session['visitor_uuid'],
+            'widget_session_token' => $session['widget_session_token'],
+        ]);
+
+        $response->assertOk();
+
+        $recommendedNames = collect((array) $response->json('data.recommended_products'))
+            ->map(fn (array $row): string => mb_strtolower((string) ($row['name'] ?? '')))
+            ->values()
+            ->all();
+
+        $this->assertContains('anti hair loss sampon', $recommendedNames);
+        $this->assertFalse(
+            collect($recommendedNames)->contains(fn (string $name): bool => str_contains($name, 'cetka') || str_contains($name, 'četka')),
+            'Accessory brush should not be recommended for hair loss treatment query.',
+        );
+    }
+
+    public function test_widget_message_hair_loss_returns_no_match_when_only_accessories_exist(): void
+    {
+        Product::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'source_type' => 'manual',
+            'name' => 'Fromm Keramicka Cetka',
+            'price' => 50.00,
+            'currency' => 'BAM',
+            'in_stock' => true,
+            'stock_qty' => 4,
+            'status' => 'active',
+            'category_text' => 'cetke',
+            'short_description' => 'Profesionalna cetka za stilizovanje.',
+        ]);
+
+        Product::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'source_type' => 'manual',
+            'name' => 'Barber Cesalj',
+            'price' => 12.00,
+            'currency' => 'BAM',
+            'in_stock' => true,
+            'stock_qty' => 7,
+            'status' => 'active',
+            'category_text' => 'cesljevi',
+            'short_description' => 'Kvalitetan cesalj za svakodnevnu upotrebu.',
+        ]);
+
+        $session = $this->startWidgetSession('visitor-hair-loss-2');
+
+        $response = $this->postJson('/api/widget/message', [
+            'public_key' => $this->widget->public_key,
+            'message' => 'Treba mi nesto protiv opadanja kose',
+            'conversation_id' => $session['conversation_id'],
+            'session_id' => $session['session_id'],
+            'visitor_uuid' => $session['visitor_uuid'],
+            'widget_session_token' => $session['widget_session_token'],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.cta.type', 'clarify_need')
+            ->assertJsonCount(0, 'data.recommended_products');
+    }
+
     /**
      * @return array<string, string>
      */
