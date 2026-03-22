@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/staging/Dockerfile
+    env_file:
+      - .env.staging
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      - db
+      - redis
+    command: ["/usr/local/bin/staging-entrypoint"]
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/staging/Dockerfile
+    env_file:
+      - .env.staging
+    volumes:
+      - ./:/var/www/html
+    depends_on:
+      - app
+      - db
+      - redis
+    command: ["/usr/local/bin/staging-worker"]
+
+  web:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./:/var/www/html
+      - ./docker/staging/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      - app
+
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${DB_DATABASE}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:
+
