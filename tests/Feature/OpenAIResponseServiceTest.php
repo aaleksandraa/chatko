@@ -8,6 +8,23 @@ use Tests\TestCase;
 
 class OpenAIResponseServiceTest extends TestCase
 {
+    public function test_it_returns_openai_error_when_live_mode_is_enabled_and_api_key_is_missing(): void
+    {
+        config()->set('services.openai.api_key', null);
+        config()->set('services.openai.force_live_responses', true);
+
+        $result = app(OpenAIResponseService::class)->respond([
+            'system' => 'Ti si AI prodajni asistent.',
+            'developer' => 'Vrati trazeni JSON format.',
+            'user' => 'Treba mi nesto za suhu kozu.',
+            'context' => ['products' => []],
+        ], 'gpt-5-mini-2025-08-07', 0.3, 350);
+
+        $this->assertSame('openai_error', data_get($result, '_usage.source'));
+        $this->assertSame('ai_unavailable', $result['detected_intent']);
+        $this->assertSame([], $result['recommended_product_ids']);
+    }
+
     public function test_it_retries_with_compatibility_payload_after_structured_400_error(): void
     {
         config()->set('services.openai.api_key', 'sk-test-key');
@@ -115,4 +132,3 @@ class OpenAIResponseServiceTest extends TestCase
         $this->assertSame([], $result['recommended_product_ids']);
     }
 }
-

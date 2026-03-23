@@ -6,7 +6,7 @@
 
   var publicKey = script.getAttribute('data-key');
   if (!publicKey) {
-    console.error('AI Sales Widget: missing data-key attribute.');
+    console.error('Chatko Widget: missing data-key attribute.');
     return;
   }
 
@@ -68,18 +68,18 @@
     root.id = 'wizsales-root';
     root.innerHTML =
       '<style>' +
-      '#wizsales-root{position:fixed;right:20px;bottom:20px;z-index:99999;font-family:Arial,sans-serif;}' +
+      '#wizsales-root{position:fixed;right:12px;bottom:12px;z-index:99999;font-family:Arial,sans-serif;max-width:calc(100vw - 24px);}' +
       '#wizsales-toggle{background:#0E9F6E;color:#fff;border:none;padding:12px 16px;border-radius:999px;cursor:pointer;font-weight:600;}' +
-      '#wizsales-panel{display:none;width:360px;height:590px;background:#fff;border:1px solid #ddd;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.18);overflow:hidden;}' +
+      '#wizsales-panel{display:none;flex-direction:column;width:min(380px,calc(100vw - 24px));height:min(680px,calc(100vh - 24px));margin-top:8px;background:#fff;border:1px solid #ddd;border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.18);overflow:hidden;}' +
       '#wizsales-header{background:#063F2B;color:#fff;padding:12px 14px;font-weight:700;}' +
-      '#wizsales-messages{height:320px;overflow:auto;padding:12px;background:#f7f8f8;}' +
+      '#wizsales-messages{flex:1;min-height:140px;overflow:auto;padding:12px;background:#f7f8f8;}' +
       '.wiz-msg{margin:8px 0;max-width:88%;padding:8px 10px;border-radius:10px;line-height:1.4;font-size:14px;}' +
       '.wiz-user{background:#dff6eb;margin-left:auto;}' +
       '.wiz-ai{background:#fff;border:1px solid #e6e6e6;}' +
       '.wiz-product{margin-top:8px;padding:8px;border:1px solid #e6e6e6;border-radius:8px;background:#fff;}' +
       '.wiz-order{margin-top:8px;padding:9px;border:1px solid #d8eadf;border-radius:8px;background:#f3fcf7;}' +
       '.wiz-order a{display:inline-block;margin-top:6px;}' +
-      '#wizsales-checkout{padding:10px;border-top:1px solid #efefef;background:#fafafa;max-height:180px;overflow:auto;}' +
+      '#wizsales-checkout{padding:10px;border-top:1px solid #efefef;background:#fafafa;max-height:min(220px,38vh);overflow:auto;}' +
       '.wiz-checkout-title{font-size:12px;font-weight:700;color:#063F2B;margin-bottom:6px;}' +
       '.wiz-checkout-row{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;}' +
       '.wiz-checkout-row.single{grid-template-columns:1fr;}' +
@@ -89,13 +89,14 @@
       '.wiz-btn-primary{background:#0E9F6E;color:#fff;}' +
       '.wiz-btn-secondary{background:#fff;color:#063F2B;border:1px solid #95b3a7;}' +
       '.wiz-checkout-meta{font-size:12px;color:#444;margin-bottom:6px;}' +
-      '#wizsales-input-wrap{display:flex;gap:8px;padding:10px;border-top:1px solid #eee;background:#fff;}' +
-      '#wizsales-input{flex:1;padding:8px;border:1px solid #ccc;border-radius:8px;}' +
-      '#wizsales-send{background:#0E9F6E;color:#fff;border:none;border-radius:8px;padding:8px 12px;cursor:pointer;}' +
+      '#wizsales-input-wrap{display:grid;grid-template-columns:1fr;gap:8px;padding:10px;border-top:1px solid #eee;background:#fff;}' +
+      '#wizsales-input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #ccc;border-radius:8px;}' +
+      '#wizsales-send{width:100%;box-sizing:border-box;background:#0E9F6E;color:#fff;border:none;border-radius:8px;padding:10px 12px;cursor:pointer;font-weight:600;}' +
+      '@media (max-width:520px){#wizsales-root{left:10px;right:10px;bottom:10px;max-width:none;}#wizsales-toggle{width:100%;border-radius:12px;}#wizsales-panel{width:100%;height:min(78vh,620px);} .wiz-checkout-row{grid-template-columns:1fr;}}' +
       '</style>' +
-      '<button id="wizsales-toggle">Pitaj AI prodavaca</button>' +
+      '<button id="wizsales-toggle">Pomoc pri izboru</button>' +
       '<div id="wizsales-panel">' +
-      '  <div id="wizsales-header">AI prodajni asistent</div>' +
+      '  <div id="wizsales-header">Pomoc pri izboru</div>' +
       '  <div id="wizsales-messages"></div>' +
       '  <div id="wizsales-checkout" style="display:none;"></div>' +
       '  <div id="wizsales-challenge-anchor" style="display:none;"></div>' +
@@ -652,9 +653,9 @@
     }
 
     toggle.addEventListener('click', function () {
-      var visible = panel.style.display === 'block';
-      panel.style.display = visible ? 'none' : 'block';
-      toggle.textContent = visible ? 'Pitaj AI prodavaca' : 'Zatvori chat';
+      var visible = panel.style.display === 'flex';
+      panel.style.display = visible ? 'none' : 'flex';
+      toggle.textContent = visible ? 'Pomoc pri izboru' : 'Zatvori chat';
       if (!visible && !messages.children.length) {
         addMessage('Zdravo! Tu sam da pomognem oko izbora proizvoda i da zavrsimo narudzbu kroz chat.', 'ai');
       }

@@ -48,6 +48,7 @@ return [
         'default_max_output_tokens' => (int) env('OPENAI_DEFAULT_MAX_OUTPUT_TOKENS', 350),
         'max_output_tokens_ceiling' => (int) env('OPENAI_MAX_OUTPUT_TOKENS_CEILING', 1200),
         'response_max_chars' => (int) env('OPENAI_RESPONSE_MAX_CHARS', 520),
+        'force_live_responses' => filter_var(env('OPENAI_FORCE_LIVE_RESPONSES', true), FILTER_VALIDATE_BOOL),
         'response_cache_enabled' => filter_var(env('OPENAI_RESPONSE_CACHE_ENABLED', true), FILTER_VALIDATE_BOOL),
         'response_cache_ttl_seconds' => (int) env('OPENAI_RESPONSE_CACHE_TTL_SECONDS', 21600),
         'response_cache_max_message_chars' => (int) env('OPENAI_RESPONSE_CACHE_MAX_MESSAGE_CHARS', 220),

@@ -17,8 +17,13 @@ class OpenAIResponseService
         $apiKey = config('services.openai.api_key');
         $safeModel = trim($model) !== '' ? $model : (string) config('services.openai.default_model', 'gpt-5-mini');
         $safeMaxOutputTokens = $this->sanitizeMaxOutputTokens($maxOutputTokens);
+        $forceLiveResponses = $this->forceLiveResponsesEnabled();
 
         if (! is_string($apiKey) || trim($apiKey) === '') {
+            if ($forceLiveResponses) {
+                return $this->unavailableResponse('missing_api_key');
+            }
+
             return $this->fallbackResponse($promptPackage, 'missing_api_key');
         }
 
@@ -71,6 +76,17 @@ class OpenAIResponseService
         }
 
         if (! (bool) ($attempt['successful'] ?? false)) {
+            if ($forceLiveResponses) {
+                return $this->unavailableResponse(
+                    'http_error',
+                    [
+                        'status' => $attempt['status'] ?? null,
+                        'stage' => $attempt['stage'] ?? null,
+                        'body' => $this->bodyPreview((string) ($attempt['body'] ?? '')),
+                    ],
+                );
+            }
+
             return $this->fallbackResponse(
                 $promptPackage,
                 'http_error',
@@ -105,6 +121,16 @@ class OpenAIResponseService
                 'incomplete_reason' => data_get($json, 'incomplete_details.reason'),
             ]);
 
+            if ($forceLiveResponses) {
+                return $this->unavailableResponse(
+                    'missing_output_text',
+                    [
+                        'status' => (string) ($json['status'] ?? 'unknown'),
+                        'incomplete_reason' => data_get($json, 'incomplete_details.reason'),
+                    ],
+                );
+            }
+
             return $this->fallbackResponse(
                 $promptPackage,
                 'missing_output_text',
@@ -122,6 +148,13 @@ class OpenAIResponseService
                 'model' => $safeModel,
                 'output_preview' => mb_substr($outputText, 0, 200),
             ]);
+
+            if ($forceLiveResponses) {
+                return $this->unavailableResponse(
+                    'non_json_output',
+                    ['output_preview' => mb_substr($outputText, 0, 200)],
+                );
+            }
 
             return $this->fallbackResponse(
                 $promptPackage,
@@ -196,6 +229,36 @@ class OpenAIResponseService
                 'fallback_meta' => $meta,
             ],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function unavailableResponse(string $reason, array $meta = []): array
+    {
+        return [
+            'answer_text' => 'AI asistent trenutno nije dostupan. Pokusajte ponovo za nekoliko trenutaka.',
+            'recommended_product_ids' => [],
+            'cta_type' => 'contact_support',
+            'cta_label' => 'Kontaktiraj podrsku',
+            'needs_handoff' => true,
+            'lead_capture_suggested' => false,
+            'detected_intent' => 'ai_unavailable',
+            'confidence' => 0.0,
+            '_usage' => [
+                'input_tokens' => null,
+                'output_tokens' => null,
+                'total_tokens' => null,
+                'source' => 'openai_error',
+                'error_reason' => $reason,
+                'error_meta' => $meta,
+            ],
+        ];
+    }
+
+    private function forceLiveResponsesEnabled(): bool
+    {
+        return (bool) config('services.openai.force_live_responses', true);
     }
 
     private function intOrNull(mixed $value): ?int

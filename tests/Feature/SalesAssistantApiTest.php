@@ -29,6 +29,7 @@ class SalesAssistantApiTest extends TestCase
     {
         parent::setUp();
         config()->set('services.openai.api_key', null);
+        config()->set('services.openai.force_live_responses', false);
 
         $plan = Plan::query()->create([
             'name' => 'Starter',

@@ -332,6 +332,10 @@ class ConversationOrchestratorService
         string $intent,
         string $messageText,
     ): array {
+        if ($this->forceLiveResponsesEnabled()) {
+            return $this->openAIResponseService->respond($promptPackage, $modelName, $temperature, $maxOutputTokens);
+        }
+
         if (! $this->shouldUseResponseCache($intent, $messageText)) {
             return $this->openAIResponseService->respond($promptPackage, $modelName, $temperature, $maxOutputTokens);
         }
@@ -426,6 +430,11 @@ class ConversationOrchestratorService
     private function responseCacheTtlSeconds(): int
     {
         return max(60, (int) config('services.openai.response_cache_ttl_seconds', 21600));
+    }
+
+    private function forceLiveResponsesEnabled(): bool
+    {
+        return (bool) config('services.openai.force_live_responses', true);
     }
 
     private function isCheckoutIntent(string $intent): bool
