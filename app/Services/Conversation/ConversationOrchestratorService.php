@@ -45,6 +45,7 @@ class ConversationOrchestratorService
         $conversation = $this->resolveConversation($tenant, $widget, $payload);
         $messageText = trim((string) ($payload['message'] ?? ''));
         $config = AiConfig::query()->where('tenant_id', $tenant->id)->first();
+        $conversationHistory = $this->recentConversationHistory($conversation, 8);
 
         $preLimitSnapshot = $this->tenantUsageLimitService->evaluateBeforeResponse($tenant, $config);
         if ((bool) ($preLimitSnapshot['blocked'] ?? false)) {
@@ -104,14 +105,16 @@ class ConversationOrchestratorService
             'normalized_text' => mb_strtolower($messageText),
         ]);
 
+        $retrievalQueryText = $this->resolveRetrievalQueryText($messageText, $conversationHistory);
+
         $intent = $this->intentDetectionService->detect($messageText);
-        $entities = $this->entityExtractionService->extract($messageText);
+        $entities = $this->entityExtractionService->extract($retrievalQueryText);
         $queryEmbedding = $this->embeddingGenerationService->embedText(
-            $messageText,
+            $retrievalQueryText,
             $this->resolvedEmbeddingModel($config),
         );
 
-        $products = $this->productRetrievalService->search($tenant, $messageText, $entities, 5, $queryEmbedding);
+        $products = $this->productRetrievalService->search($tenant, $retrievalQueryText, $entities, 5, $queryEmbedding);
         $allowedProductIds = $products->pluck('id')->map(fn ($id): int => (int) $id)->all();
 
         // Checkout flow is deterministic and should bypass LLM calls to reduce cost.
@@ -155,7 +158,7 @@ class ConversationOrchestratorService
             $usage = $this->tenantUsageLimitService->usageFromLlmResponse($preparedCheckoutResponse);
             $responseSource = 'checkout_rule_engine';
         } else {
-            $knowledgeChunks = $this->knowledgeRetrievalService->search($tenant, $messageText, 4, $queryEmbedding);
+            $knowledgeChunks = $this->knowledgeRetrievalService->search($tenant, $retrievalQueryText, 4, $queryEmbedding);
 
             $salesDecision = $this->salesDecisionService->decide(
                 $intent,
@@ -166,6 +169,8 @@ class ConversationOrchestratorService
             $promptPackage = $this->promptBuilderService->build($tenant, $config, $messageText, [
                 'intent' => $intent,
                 'entities' => $entities,
+                'retrieval_query_text' => $retrievalQueryText,
+                'conversation_history' => $conversationHistory,
                 'sales_decision' => $salesDecision,
                 'products' => $products->map(fn ($product): array => [
                     'id' => $product->id,
@@ -222,6 +227,8 @@ class ConversationOrchestratorService
             'intent' => $intent,
             'metadata_json' => [
                 'entities' => $entities,
+                'retrieval_query_text' => $retrievalQueryText,
+                'history_count' => count($conversationHistory),
                 'recommended_product_ids' => $validated['recommended_product_ids'],
                 'confidence' => $validated['confidence'],
                 'cta_type' => $validated['cta_type'],
@@ -462,5 +469,102 @@ class ConversationOrchestratorService
         }
 
         return (string) Str::uuid();
+    }
+
+    /**
+     * @return array<int, array{role:string,text:string,intent:string|null,at:string|null}>
+     */
+    private function recentConversationHistory(Conversation $conversation, int $limit = 8): array
+    {
+        $rows = ConversationMessage::query()
+            ->where('tenant_id', $conversation->tenant_id)
+            ->where('conversation_id', $conversation->id)
+            ->orderByDesc('id')
+            ->limit(max(1, $limit))
+            ->get(['role', 'message_text', 'intent', 'created_at']);
+
+        return $rows
+            ->reverse()
+            ->map(fn (ConversationMessage $message): array => [
+                'role' => (string) $message->role,
+                'text' => $this->historyText((string) $message->message_text),
+                'intent' => $message->intent !== null ? (string) $message->intent : null,
+                'at' => $message->created_at?->toIso8601String(),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param array<int, array{role:string,text:string,intent:string|null,at:string|null}> $history
+     */
+    private function resolveRetrievalQueryText(string $messageText, array $history): string
+    {
+        if (! $this->isLowSignalFollowUp($messageText)) {
+            return $messageText;
+        }
+
+        $lastUserMessage = $this->lastUserMessageFromHistory($history);
+        if ($lastUserMessage === null) {
+            return $messageText;
+        }
+
+        return trim($lastUserMessage."\nFollow-up: ".$messageText);
+    }
+
+    private function isLowSignalFollowUp(string $messageText): bool
+    {
+        $normalized = mb_strtolower(trim($messageText));
+        if ($normalized === '') {
+            return false;
+        }
+
+        if (mb_strlen($normalized) > 28) {
+            return false;
+        }
+
+        $compact = (string) preg_replace('/\s+/u', ' ', $normalized);
+        $tokens = preg_split('/\s+/u', $compact) ?: [];
+        if (count($tokens) > 4) {
+            return false;
+        }
+
+        return preg_match('/\b(da|moze|mozee|mozeh|ok|okej|super|vazi|važi|naravno|slobodno|moze moze|hajde)\b/u', $compact) === 1;
+    }
+
+    /**
+     * @param array<int, array{role:string,text:string,intent:string|null,at:string|null}> $history
+     */
+    private function lastUserMessageFromHistory(array $history): ?string
+    {
+        for ($i = count($history) - 1; $i >= 0; $i--) {
+            $entry = $history[$i] ?? null;
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            if (($entry['role'] ?? '') !== 'user') {
+                continue;
+            }
+
+            $text = trim((string) ($entry['text'] ?? ''));
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        return null;
+    }
+
+    private function historyText(string $text): string
+    {
+        $normalized = trim((string) preg_replace('/\s+/u', ' ', $text));
+        $maxChars = 220;
+
+        if (mb_strlen($normalized) <= $maxChars) {
+            return $normalized;
+        }
+
+        return rtrim(mb_substr($normalized, 0, $maxChars)).'...';
     }
 }

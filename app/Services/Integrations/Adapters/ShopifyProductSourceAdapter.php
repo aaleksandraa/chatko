@@ -143,6 +143,7 @@ GQL,
     {
         $variants = data_get($node, 'variants.nodes', []);
         $variantList = is_array($variants) ? $variants : [];
+        $attributes = $this->extractAttributes($node);
 
         $firstVariant = $variantList[0] ?? [];
         $price = (float) ($firstVariant['price'] ?? 0);
@@ -192,6 +193,7 @@ GQL,
             'category' => $node['productType'] ?? null,
             'category_text' => $node['productType'] ?? null,
             'brand' => $node['vendor'] ?? null,
+            'attributes' => $attributes,
             'tags' => $node['tags'] ?? [],
             'status' => strtolower((string) ($node['status'] ?? 'active')),
         ];
@@ -211,6 +213,10 @@ query Products($cursor: String, $query: String) {
         descriptionHtml
         productType
         vendor
+        options {
+          name
+          values
+        }
         onlineStoreUrl
         status
         tags
@@ -238,6 +244,41 @@ query Products($cursor: String, $query: String) {
   }
 }
 GQL;
+    }
+
+    /**
+     * @param array<string, mixed> $node
+     * @return array<string, array<int, string>>
+     */
+    private function extractAttributes(array $node): array
+    {
+        $attributes = [];
+        foreach ((array) data_get($node, 'options', []) as $option) {
+            if (! is_array($option)) {
+                continue;
+            }
+
+            $name = trim((string) ($option['name'] ?? ''));
+            if ($name === '') {
+                continue;
+            }
+
+            $values = $option['values'] ?? [];
+            if (! is_array($values)) {
+                $values = [$values];
+            }
+
+            $normalizedValues = array_values(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                $values,
+            ), static fn (string $value): bool => $value !== ''));
+
+            if ($normalizedValues !== []) {
+                $attributes[$name] = $normalizedValues;
+            }
+        }
+
+        return $attributes;
     }
 
     private function queryFilter(string $mode, ?CarbonImmutable $since): ?string

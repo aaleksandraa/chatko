@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Widget;
 use App\Services\Auth\ApiTokenService;
+use Illuminate\Http\Client\Request;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Hash;
@@ -432,6 +433,211 @@ class SalesAssistantApiTest extends TestCase
 
         $answer = mb_strtolower((string) $response->json('data.answer_text'));
         $this->assertStringContainsString('potvrdi koji proizvod', $answer);
+    }
+
+    public function test_widget_message_oily_hair_prefers_oily_products_over_tools_in_fallback_mode(): void
+    {
+        Product::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'source_type' => 'manual',
+            'name' => 'Cetka Paddle Brush',
+            'price' => 44.00,
+            'currency' => 'BAM',
+            'in_stock' => true,
+            'stock_qty' => 6,
+            'status' => 'active',
+            'category_text' => 'cetke za kosu',
+            'short_description' => 'Cetka za rascesljavanje i feniranje.',
+        ]);
+
+        Product::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'source_type' => 'manual',
+            'name' => 'Hydration Maska za suhu kosu',
+            'price' => 29.00,
+            'currency' => 'BAM',
+            'in_stock' => true,
+            'stock_qty' => 5,
+            'status' => 'active',
+            'category_text' => 'maska za suhu kosu',
+            'short_description' => 'Intenzivna hidratacija za suhu kosu.',
+        ]);
+
+        Product::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'source_type' => 'manual',
+            'name' => 'Sebum Balance Sampon',
+            'price' => 24.00,
+            'currency' => 'BAM',
+            'in_stock' => true,
+            'stock_qty' => 14,
+            'status' => 'active',
+            'category_text' => 'sampon za masnu kosu',
+            'short_description' => 'Clarifying sampon za masno vlasiste i balans sebuma.',
+        ]);
+
+        $session = $this->startWidgetSession('visitor-oily-hair');
+
+        $response = $this->postJson('/api/widget/message', [
+            'public_key' => $this->widget->public_key,
+            'message' => 'Treba mi nesto za masnu kosu',
+            'conversation_id' => $session['conversation_id'],
+            'session_id' => $session['session_id'],
+            'visitor_uuid' => $session['visitor_uuid'],
+            'widget_session_token' => $session['widget_session_token'],
+        ]);
+
+        $response->assertOk();
+
+        $recommendedNames = collect((array) $response->json('data.recommended_products'))
+            ->map(fn (array $row): string => mb_strtolower((string) ($row['name'] ?? '')))
+            ->values()
+            ->all();
+
+        $this->assertContains('sebum balance sampon', $recommendedNames);
+        $this->assertFalse(
+            collect($recommendedNames)->contains(fn (string $name): bool => str_contains($name, 'cetka') || str_contains($name, 'četka')),
+            'Accessory tools should not be recommended for oily-hair care query.',
+        );
+    }
+
+    public function test_widget_message_can_match_by_tags_and_attributes_when_name_is_generic(): void
+    {
+        Product::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'source_type' => 'manual',
+            'name' => 'Balance Care Shampoo',
+            'price' => 27.00,
+            'currency' => 'BAM',
+            'in_stock' => true,
+            'stock_qty' => 9,
+            'status' => 'active',
+            'category_text' => 'hair care',
+            'short_description' => 'Daily cleanser.',
+            'tags_json' => ['masna kosa', 'sebum'],
+            'attributes_json' => [
+                'hair_type' => ['masna kosa'],
+                'finish' => ['balancing'],
+            ],
+        ]);
+
+        $session = $this->startWidgetSession('visitor-tags-attributes-match');
+
+        $response = $this->postJson('/api/widget/message', [
+            'public_key' => $this->widget->public_key,
+            'message' => 'Treba mi nesto za masnu kosu',
+            'conversation_id' => $session['conversation_id'],
+            'session_id' => $session['session_id'],
+            'visitor_uuid' => $session['visitor_uuid'],
+            'widget_session_token' => $session['widget_session_token'],
+        ]);
+
+        $response->assertOk();
+
+        $recommendedNames = collect((array) $response->json('data.recommended_products'))
+            ->map(fn (array $row): string => mb_strtolower((string) ($row['name'] ?? '')))
+            ->values()
+            ->all();
+
+        $this->assertContains('balance care shampoo', $recommendedNames);
+    }
+
+    public function test_widget_short_follow_up_keeps_previous_context_in_openai_prompt(): void
+    {
+        config()->set('services.openai.api_key', 'test_openai_key');
+
+        Product::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'source_type' => 'manual',
+            'name' => 'Sebum Balance Sampon',
+            'price' => 24.00,
+            'currency' => 'BAM',
+            'in_stock' => true,
+            'stock_qty' => 14,
+            'status' => 'active',
+            'category_text' => 'sampon za masnu kosu',
+            'short_description' => 'Clarifying sampon za masno vlasiste i balans sebuma.',
+        ]);
+
+        $capturedResponsePayloads = [];
+        Http::fake([
+            'https://api.openai.com/v1/embeddings' => Http::response([
+                'data' => [[
+                    'embedding' => [0.11, 0.05, -0.02, 0.18],
+                ]],
+            ], 200),
+            'https://api.openai.com/v1/responses' => function (Request $request) use (&$capturedResponsePayloads) {
+                $capturedResponsePayloads[] = $request->data();
+
+                return Http::response([
+                    'output' => [[
+                        'content' => [[
+                            'text' => json_encode([
+                                'answer_text' => 'Izdvojio sam relevantne opcije iz kataloga.',
+                                'recommended_product_ids' => [],
+                                'cta_type' => null,
+                                'cta_label' => null,
+                                'needs_handoff' => false,
+                                'lead_capture_suggested' => false,
+                                'detected_intent' => 'product_recommendation',
+                                'confidence' => 0.8,
+                            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                        ]],
+                    ]],
+                    'usage' => [
+                        'input_tokens' => 20,
+                        'output_tokens' => 30,
+                        'total_tokens' => 50,
+                    ],
+                ], 200);
+            },
+        ]);
+
+        $session = $this->startWidgetSession('visitor-followup-memory');
+
+        $first = $this->postJson('/api/widget/message', [
+            'public_key' => $this->widget->public_key,
+            'message' => 'Treba mi nesto za masnu kosu',
+            'conversation_id' => $session['conversation_id'],
+            'session_id' => $session['session_id'],
+            'visitor_uuid' => $session['visitor_uuid'],
+            'widget_session_token' => $session['widget_session_token'],
+        ]);
+        $first->assertOk();
+
+        $second = $this->postJson('/api/widget/message', [
+            'public_key' => $this->widget->public_key,
+            'message' => 'moze',
+            'conversation_id' => $session['conversation_id'],
+            'session_id' => $session['session_id'],
+            'visitor_uuid' => $session['visitor_uuid'],
+            'widget_session_token' => $session['widget_session_token'],
+        ]);
+        $second->assertOk();
+
+        $this->assertGreaterThanOrEqual(2, count($capturedResponsePayloads));
+        $secondPayload = $capturedResponsePayloads[1];
+        $userEnvelopeRaw = (string) data_get($secondPayload, 'input.2.content.0.text', '');
+        $decodedEnvelope = json_decode($userEnvelopeRaw, true);
+
+        $this->assertIsArray($decodedEnvelope);
+
+        $history = data_get($decodedEnvelope, 'context.conversation_history', []);
+        $this->assertIsArray($history);
+        $this->assertNotEmpty($history);
+
+        $historyUserTexts = collect($history)
+            ->filter(fn ($row): bool => is_array($row) && ($row['role'] ?? '') === 'user')
+            ->map(fn ($row): string => mb_strtolower((string) ($row['text'] ?? '')))
+            ->values()
+            ->all();
+
+        $this->assertTrue(
+            collect($historyUserTexts)->contains(fn (string $text): bool => str_contains($text, 'treba mi nesto za masnu kosu')),
+        );
+
+        $retrievalQueryText = (string) data_get($decodedEnvelope, 'context.retrieval_query_text', '');
+        $this->assertStringContainsString('Treba mi nesto za masnu kosu', $retrievalQueryText);
     }
 
     /**

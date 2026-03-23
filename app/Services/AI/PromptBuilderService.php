@@ -19,6 +19,8 @@ class PromptBuilderService
             'Vrati JSON objekat sa poljima: answer_text, recommended_product_ids, cta_type, cta_label, needs_handoff, lead_capture_suggested, detected_intent, confidence.',
             'recommended_product_ids mora sadrzavati samo ID-jeve iz liste proizvoda u kontekstu.',
             'Ako nema dobrog fit-a, vrati praznu listu recommended_product_ids.',
+            'Koristi conversation_history: ako je nova poruka kratka potvrda (npr. "moze", "da", "ok"), nastavi prethodni kontekst i ne resetuj temu.',
+            'Ako context.products sadrzi relevantne opcije, ne govori da proizvoda nema.',
             "answer_text drzi kratkim: maksimalno {$responseMaxChars} karaktera i najvise 3 recenice.",
         ];
 

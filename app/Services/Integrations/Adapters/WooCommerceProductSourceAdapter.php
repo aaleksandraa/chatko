@@ -197,6 +197,24 @@ class WooCommerceProductSourceAdapter implements ProductSourceAdapterInterface, 
             }
         }
 
+        $tags = [];
+        foreach (($item['tags'] ?? []) as $tag) {
+            if (! is_array($tag)) {
+                continue;
+            }
+
+            $name = trim((string) ($tag['name'] ?? ''));
+            if ($name !== '') {
+                $tags[] = $name;
+            }
+
+            $slug = trim((string) ($tag['slug'] ?? ''));
+            if ($slug !== '') {
+                $tags[] = $slug;
+            }
+        }
+        $tags = array_values(array_unique($tags));
+
         $attributes = [];
         foreach (($item['attributes'] ?? []) as $attribute) {
             if (! is_array($attribute)) {
@@ -208,7 +226,15 @@ class WooCommerceProductSourceAdapter implements ProductSourceAdapterInterface, 
                 continue;
             }
 
-            $attributes[$name] = $attribute['options'] ?? [];
+            $options = $attribute['options'] ?? [];
+            if (! is_array($options)) {
+                $options = [$options];
+            }
+
+            $attributes[$name] = array_values(array_filter(array_map(
+                static fn ($value): string => trim((string) $value),
+                $options,
+            ), static fn (string $value): bool => $value !== ''));
         }
 
         return [
@@ -228,6 +254,7 @@ class WooCommerceProductSourceAdapter implements ProductSourceAdapterInterface, 
             'category' => implode(', ', $categories),
             'category_text' => implode(', ', $categories),
             'attributes' => $attributes,
+            'tags' => $tags,
             'status' => $item['status'] ?? 'inactive',
         ];
     }

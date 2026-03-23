@@ -79,6 +79,10 @@ class WordPressAndShopifyAdapterTest extends TestCase
                         'price' => '55.50',
                         'stock_qty' => 7,
                         'stock_status' => 'instock',
+                        'attributes' => [
+                            'hair_type' => ['masna kosa'],
+                            'size' => ['250ml'],
+                        ],
                     ],
                     '_embedded' => [
                         'wp:featuredmedia' => [
@@ -86,7 +90,8 @@ class WordPressAndShopifyAdapterTest extends TestCase
                         ],
                         'wp:term' => [
                             [
-                                ['name' => 'Category A'],
+                                ['name' => 'Category A', 'taxonomy' => 'product_cat'],
+                                ['name' => 'masna kosa', 'taxonomy' => 'product_tag'],
                             ],
                         ],
                     ],
@@ -156,6 +161,18 @@ class WordPressAndShopifyAdapterTest extends TestCase
             'sku' => 'WP-901',
             'name' => 'WP Product One',
         ]);
+
+        $wpProduct = Product::query()
+            ->where('tenant_id', $this->tenant->id)
+            ->where('sku', 'WP-901')
+            ->first();
+
+        $this->assertNotNull($wpProduct);
+        $this->assertSame(['masna kosa'], $wpProduct->tags_json);
+        $this->assertSame([
+            'hair_type' => ['masna kosa'],
+            'size' => ['250ml'],
+        ], $wpProduct->attributes_json);
     }
 
     public function test_shopify_adapter_connection_test_and_sync(): void
@@ -188,6 +205,10 @@ class WordPressAndShopifyAdapterTest extends TestCase
                                     'descriptionHtml' => '<p>Shopify product description</p>',
                                     'productType' => 'Skincare',
                                     'vendor' => 'Shopify Brand',
+                                    'options' => [
+                                        ['name' => 'Hair Type', 'values' => ['masna kosa', 'normalna kosa']],
+                                        ['name' => 'Size', 'values' => ['250ml']],
+                                    ],
                                     'onlineStoreUrl' => 'https://demo.myshopify.com/products/shopify-serum',
                                     'status' => 'ACTIVE',
                                     'tags' => ['serum', 'skin'],
@@ -257,6 +278,11 @@ class WordPressAndShopifyAdapterTest extends TestCase
         $this->assertNotNull($product);
         $this->assertSame('Shopify Serum', $product->name);
         $this->assertSame('Skincare', $product->category_text);
+        $this->assertSame(['serum', 'skin'], $product->tags_json);
+        $this->assertSame([
+            'Hair Type' => ['masna kosa', 'normalna kosa'],
+            'Size' => ['250ml'],
+        ], $product->attributes_json);
     }
 
     /**
@@ -270,4 +296,3 @@ class WordPressAndShopifyAdapterTest extends TestCase
         ];
     }
 }
-

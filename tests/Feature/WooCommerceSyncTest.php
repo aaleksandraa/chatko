@@ -158,6 +158,16 @@ class WooCommerceSyncTest extends TestCase
                         'stock_quantity' => 10,
                         'stock_status' => 'instock',
                         'categories' => [['name' => 'Skincare']],
+                        'tags' => [
+                            ['name' => 'masna kosa', 'slug' => 'masna-kosa'],
+                            ['name' => 'sebum'],
+                        ],
+                        'attributes' => [
+                            [
+                                'name' => 'Hair Type',
+                                'options' => ['masna kosa'],
+                            ],
+                        ],
                         'images' => [['src' => 'https://img.example.com/serum.jpg']],
                         'permalink' => 'https://shop.example.com/p/hydra-serum-sensitive',
                         'status' => 'publish',
@@ -176,6 +186,16 @@ class WooCommerceSyncTest extends TestCase
                         'stock_quantity' => 8,
                         'stock_status' => 'instock',
                         'categories' => [['name' => 'Skincare']],
+                        'tags' => [
+                            ['name' => 'masna kosa', 'slug' => 'masna-kosa'],
+                            ['name' => 'sebum'],
+                        ],
+                        'attributes' => [
+                            [
+                                'name' => 'Hair Type',
+                                'options' => ['masna kosa'],
+                            ],
+                        ],
                         'images' => [['src' => 'https://img.example.com/serum.jpg']],
                         'permalink' => 'https://shop.example.com/p/hydra-serum-sensitive',
                         'status' => 'publish',
@@ -220,6 +240,8 @@ class WooCommerceSyncTest extends TestCase
         $this->assertNotNull($product);
         $this->assertSame('37.50', (string) $product->price);
         $this->assertSame('32.50', (string) $product->sale_price);
+        $this->assertSame(['masna kosa', 'masna-kosa', 'sebum'], $product->tags_json);
+        $this->assertSame(['Hair Type' => ['masna kosa']], $product->attributes_json);
     }
 
     public function test_woocommerce_sync_uses_total_pages_header_when_page_size_is_capped(): void

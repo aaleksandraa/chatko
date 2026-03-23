@@ -17,12 +17,19 @@ class ProductEmbeddingService
 
     public function embed(Product $product, string $model = 'text-embedding-3-small'): ProductEmbedding
     {
+        $attributesText = $this->flattenStructured($product->attributes_json);
+        $specsText = $this->flattenStructured($product->specs_json);
+        $tagsText = $this->flattenStructured($product->tags_json);
+
         $text = implode("\n", array_filter([
             $product->name,
             $product->short_description,
             $product->long_description,
             $product->category_text,
             $product->brand_text,
+            $attributesText !== '' ? 'Attributes: '.$attributesText : null,
+            $specsText !== '' ? 'Specs: '.$specsText : null,
+            $tagsText !== '' ? 'Tags: '.$tagsText : null,
         ]));
 
         $embeddingModel = config('services.openai.embedding_model', $model);
@@ -85,6 +92,37 @@ class ProductEmbeddingService
     private function canUsePgvector(string $table, string $column): bool
     {
         return DB::connection()->getDriverName() === 'pgsql' && Schema::hasColumn($table, $column);
+    }
+
+    private function flattenStructured(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+
+        if (is_scalar($value)) {
+            return trim((string) $value);
+        }
+
+        if (! is_array($value)) {
+            return '';
+        }
+
+        $chunks = [];
+        foreach ($value as $key => $item) {
+            $itemText = $this->flattenStructured($item);
+            if ($itemText === '') {
+                continue;
+            }
+
+            if (is_string($key)) {
+                $chunks[] = trim($key).': '.$itemText;
+            } else {
+                $chunks[] = $itemText;
+            }
+        }
+
+        return trim(implode('; ', array_filter($chunks, static fn (string $chunk): bool => $chunk !== '')));
     }
 }
 

@@ -141,6 +141,10 @@ class WordPressRestProductSourceAdapter implements ProductSourceAdapterInterface
      */
     private function mapProduct(array $item, array $mapping): array
     {
+        $terms = $this->extractTerms($item);
+        $categories = $terms['categories'];
+        $tags = $terms['tags'];
+
         $base = [
             'id' => $item['id'] ?? null,
             'external_id' => isset($item['id']) ? (string) $item['id'] : null,
@@ -155,9 +159,10 @@ class WordPressRestProductSourceAdapter implements ProductSourceAdapterInterface
             'stock_status' => data_get($item, 'meta.stock_status'),
             'product_url' => $item['link'] ?? null,
             'images' => $this->extractImages($item),
-            'category' => $this->extractCategory($item),
-            'category_text' => $this->extractCategory($item),
+            'category' => $categories !== [] ? implode(', ', $categories) : null,
+            'category_text' => $categories !== [] ? implode(', ', $categories) : null,
             'attributes' => data_get($item, 'meta.attributes', []),
+            'tags' => $tags !== [] ? $tags : (data_get($item, 'meta.tags') ?? []),
             'status' => $item['status'] ?? 'publish',
         ];
 
@@ -196,28 +201,53 @@ class WordPressRestProductSourceAdapter implements ProductSourceAdapterInterface
     /**
      * @param array<string, mixed> $item
      */
-    private function extractCategory(array $item): ?string
+    /**
+     * @param array<string, mixed> $item
+     * @return array{categories: array<int, string>, tags: array<int, string>}
+     */
+    private function extractTerms(array $item): array
     {
         $terms = data_get($item, '_embedded.wp:term', []);
         if (! is_array($terms)) {
-            return null;
+            return [
+                'categories' => [],
+                'tags' => [],
+            ];
         }
 
         $categories = [];
+        $tags = [];
         foreach ($terms as $taxonomyGroup) {
             if (! is_array($taxonomyGroup)) {
                 continue;
             }
             foreach ($taxonomyGroup as $term) {
-                if (is_array($term) && isset($term['name'])) {
-                    $categories[] = (string) $term['name'];
+                if (! is_array($term) || ! isset($term['name'])) {
+                    continue;
                 }
+
+                $name = trim((string) $term['name']);
+                if ($name === '') {
+                    continue;
+                }
+
+                $taxonomy = strtolower((string) ($term['taxonomy'] ?? ''));
+                if (in_array($taxonomy, ['post_tag', 'product_tag', 'pa_tag', 'tags'], true)) {
+                    $tags[] = $name;
+                    continue;
+                }
+
+                $categories[] = $name;
             }
         }
 
         $categories = array_values(array_unique(array_filter($categories)));
+        $tags = array_values(array_unique(array_filter($tags)));
 
-        return $categories === [] ? null : implode(', ', $categories);
+        return [
+            'categories' => $categories,
+            'tags' => $tags,
+        ];
     }
 
     /**
